@@ -7,6 +7,8 @@ import Navbar from "@/app/components/layout/Navbar";
 import { fetchCompanies, createCompanyApi } from "@/lib/companies";
 
 export default function CompaniesPage() {
+
+
     const router = useRouter();
     const [companies, setCompanies] = useState([]);
     const [form, setForm] = useState({ name: "", taxNo: "" });
@@ -15,12 +17,6 @@ export default function CompaniesPage() {
 
     // İlk yüklemede companies çek
     useEffect(() => {
-        const token = typeof window !== "undefined" && localStorage.getItem("token");
-        if (!token) {
-            router.push("/login");
-            return;
-        }
-
         setLoading(true);
         fetchCompanies()
             .then((data) => {

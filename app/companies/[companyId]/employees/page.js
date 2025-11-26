@@ -2,17 +2,19 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAuthGuard } from "@/app/components/layout/useAuthGuard";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
 import { fetchEmployees, createEmployeeApi } from "@/lib/employees";
 
 export default function EmployeesPage() {
+    const ready = useAuthGuard();
     const { companyId } = useParams();
     const router = useRouter();
-
     const [employees, setEmployees] = useState([]);
     const [form, setForm] = useState({
         name: "",
+        surname: "",
         wallet_address: "",   // backend alan adına göre ayarla
         position: "",
     });
@@ -21,13 +23,6 @@ export default function EmployeesPage() {
 
     // Sayfa ilk açıldığında çalışanları çek
     useEffect(() => {
-        const token =
-            typeof window !== "undefined" && localStorage.getItem("token");
-        if (!token) {
-            router.push("/login");
-            return;
-        }
-
         setLoading(true);
         fetchEmployees(companyId)
             .then((data) => {
@@ -55,17 +50,26 @@ export default function EmployeesPage() {
         try {
             const payload = {
                 name: form.name,
+                surname: form.surname,
                 wallet_address: form.wallet_address, // backend’e göre burayı değiştir
                 // position backend'de varsa buraya ekleyebilirsin
             };
 
             const created = await createEmployeeApi(companyId, payload);
             setEmployees((prev) => [...prev, created]);
-            setForm({ name: "", wallet_address: "", position: "" });
+            setForm({ name: "", surname: "", wallet_address: "", position: "" });
         } catch (err) {
             setError(err.message);
         }
     };
+
+    if (!ready) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+                Yükleniyor...
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex bg-slate-100">
@@ -101,13 +105,24 @@ export default function EmployeesPage() {
 
                             <form className="space-y-3" onSubmit={handleSubmit}>
                                 <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Ad Soyad</label>
+                                    <label className="text-slate-600">Ad</label>
                                     <input
                                         name="name"
                                         value={form.name}
                                         onChange={handleChange}
                                         className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                        placeholder="Örn: Ali Yılmaz"
+                                        placeholder="Örn: Ali"
+                                    />
+                                </div>
+
+                                <div className="space-y-1 text-sm">
+                                    <label className="text-slate-600">Soyad</label>
+                                    <input
+                                        name="surname"
+                                        value={form.surname}
+                                        onChange={handleChange}
+                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                        placeholder="Örn: Yılmaz"
                                     />
                                 </div>
 

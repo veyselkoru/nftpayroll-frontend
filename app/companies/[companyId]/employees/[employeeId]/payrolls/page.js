@@ -1,9 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
+import { useAuthGuard } from "@/app/components/layout/useAuthGuard";
+
 import {
     fetchPayrolls,
     createPayrollApi,
@@ -12,97 +14,77 @@ import {
     retryMintApi,
 } from "@/lib/payrolls";
 
-function StatusBadge({ status }) {
-    const map = {
-        created: "Hazırlandı",
-        queued: "Kuyrukta",
-        processing: "İşleniyor",
-        minting: "Mint ediliyor",
-        minted: "Mint edildi",
-        failed: "Hata",
-    };
-
-    const colorClass = {
-        created: "bg-slate-100 text-slate-700",
-        queued: "bg-amber-100 text-amber-800",
-        processing: "bg-blue-100 text-blue-800",
-        minting: "bg-blue-100 text-blue-800",
-        minted: "bg-emerald-100 text-emerald-800",
-        failed: "bg-red-100 text-red-800",
-    }[status] || "bg-slate-100 text-slate-700";
-
-    return (
-        <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${colorClass}`}
-        >
-            {map[status] || status || "-"}
-        </span>
-    );
-}
-
 export default function PayrollsPage() {
+    const ready = useAuthGuard();
+
+    // ---- HOOK'lar (konum önemli) ----
     const { companyId, employeeId } = useParams();
     const router = useRouter();
 
     const [payrolls, setPayrolls] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [creating, setCreating] = useState(false);
+    const [error, setError] = useState("");
+    const [autoRefresh, setAutoRefresh] = useState(false);
+
+
     const [form, setForm] = useState({
         period_start: "",
         period_end: "",
         gross_salary: "",
         net_salary: "",
     });
-    const [loading, setLoading] = useState(true);
-    const [actionLoadingId, setActionLoadingId] = useState(null);
-    const [error, setError] = useState("");
-    const [statusMap, setStatusMap] = useState({}); // /status responsunu ayrı tutmak için
 
-    // Sayfa açıldığında payroll’ları çek
+    // ---- Payrolls Fetch ----
     useEffect(() => {
-        const token =
-            typeof window !== "undefined" && localStorage.getItem("token");
-        if (!token) {
-            router.push("/login");
-            return;
-        }
+        if (!ready) return;
 
-        setLoading(true);
-        fetchPayrolls(companyId, employeeId)
-            .then((data) => {
+        const load = async () => {
+            try {
+                setLoading(true);
+                const data = await fetchPayrolls(companyId, employeeId);
                 const list = Array.isArray(data) ? data : data.data || [];
                 setPayrolls(list);
-            })
-            .catch((err) => {
+            } catch (err) {
                 setError(err.message);
-                if (err.message.toLowerCase().includes("unauth")) {
-                    router.push("/login");
-                }
-            })
-            .finally(() => setLoading(false));
-    }, [companyId, employeeId, router]);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    const handleChange = (e) =>
-        setForm({ ...form, [e.target.name]: e.target.value });
+        load();
+    }, [ready, companyId, employeeId]);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!form.period_start || !form.period_end || !form.gross_salary) return;
+    useEffect(() => {
+        if (!ready) return;
+        if (!autoRefresh) return;
 
+        const id = setInterval(() => {
+            refreshPayrolls().catch(() => { });
+        }, 5000); // 5 saniyede bir güncelle
+
+        return () => clearInterval(id);
+    }, [ready, autoRefresh, companyId, employeeId]);
+
+    // ---- Create Payroll ----
+    const handleCreate = async () => {
+        setCreating(true);
         setError("");
+
         try {
             const payload = {
-                period_start: form.period_start,
-                period_end: form.period_end,
-                gross_salary: form.gross_salary,
-                net_salary: form.net_salary,
+                ...form,
+                gross_salary: Number(form.gross_salary),
+                net_salary: Number(form.net_salary),
+                payload: { note: "Payroll metadata" },
             };
 
-            const created = await createPayrollApi(
-                companyId,
-                employeeId,
-                payload
-            );
+            await createPayrollApi(companyId, employeeId, payload);
 
-            setPayrolls((prev) => [...prev, created]);
+            // refresh list
+            const updated = await fetchPayrolls(companyId, employeeId);
+            setPayrolls(updated.data || updated);
+
             setForm({
                 period_start: "",
                 period_end: "",
@@ -111,228 +93,243 @@ export default function PayrollsPage() {
             });
         } catch (err) {
             setError(err.message);
+        } finally {
+            setCreating(false);
         }
     };
 
-    // Queue endpoint
-    const handleQueue = async (id) => {
-        setError("");
-        setActionLoadingId(id);
+    // ---- Queue Mint ----
+    const handleQueueMint = async (payrollId) => {
         try {
-            await queuePayrollApi(companyId, employeeId, id);
-            // Backend, payroll.status alanını güncelliyorsa buradan tekrar liste çekebilirsin:
-            const data = await fetchPayrolls(companyId, employeeId);
-            const list = Array.isArray(data) ? data : data.data || [];
-            setPayrolls(list);
+            await queuePayrollApi(companyId, employeeId, payrollId);
+            setAutoRefresh(true);      // 🔹 hemen başlasın
+            refreshPayrolls();
         } catch (err) {
-            setError(err.message);
-        } finally {
-            setActionLoadingId(null);
+            alert(err.message);
         }
     };
 
-    // Status endpoint
-    const handleStatus = async (id) => {
-        setError("");
-        setActionLoadingId(id);
+
+
+    const refreshPayrolls = async () => {
+        const data = await fetchPayrolls(companyId, employeeId);
+        const list = data.data || data;
+
+        setPayrolls(list);
+
+        // 🔹 Auto refresh'e karar ver:
+        const shouldKeepRefreshing = list.some((p) => {
+            // Bordro hâlâ mint sürecinde mi?
+            if (p.status === "queued" || p.status === "pending") return true;
+            if (p.nft && p.nft.status && p.nft.status !== "sent" && p.nft.status !== "failed") {
+                return true;
+            }
+            return false;
+        });
+
+        setAutoRefresh(shouldKeepRefreshing);
+    };
+
+    // ---- Update Status ----
+    const handleStatus = async (payrollId) => {
         try {
-            const statusResp = await payrollStatusApi(companyId, employeeId, id);
-            // responsu olduğu gibi map’te tutuyoruz, hem status string’ini hem raw JSON’u gösterebiliriz
-            setStatusMap((prev) => ({ ...prev, [id]: statusResp }));
+            const res = await payrollStatusApi(companyId, employeeId, payrollId);
+            alert("Güncel durum: " + JSON.stringify(res, null, 2));
+            refreshPayrolls();
         } catch (err) {
-            setError(err.message);
-        } finally {
-            setActionLoadingId(null);
+            alert(err.message);
         }
     };
 
-    // Mint retry endpoint
-    const handleRetryMint = async (id) => {
-        setError("");
-        setActionLoadingId(id);
+    // ---- Retry Mint ----
+    const handleRetry = async (payrollId) => {
         try {
-            await retryMintApi(companyId, employeeId, id);
-            // Retry sonrası da listeyi tazelemek güzel olur
-            const data = await fetchPayrolls(companyId, employeeId);
-            const list = Array.isArray(data) ? data : data.data || [];
-            setPayrolls(list);
+            await retryMintApi(companyId, employeeId, payrollId);
+            setAutoRefresh(true);      // 🔹 tekrar takip et
+            refreshPayrolls();
         } catch (err) {
-            setError(err.message);
-        } finally {
-            setActionLoadingId(null);
+            alert(err.message);
         }
     };
+
+    // ---- Status Badge ----
+    const badge = (status) => {
+        const colors = {
+            pending: "bg-yellow-100 text-yellow-700",
+            queued: "bg-blue-100 text-blue-700",
+            minted: "bg-green-100 text-green-700",
+            mint_failed: "bg-red-100 text-red-700",
+        };
+
+        return (
+            <span className={`px-2 py-1 text-xs rounded ${colors[status] || "bg-gray-200"}`}>
+                {status}
+            </span>
+        );
+    };
+
+
+
+
+    // ---- Render (guard) ----
+    if (!ready) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+                Yükleniyor...
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex bg-slate-100">
             <Sidebar />
-
-            <div className="flex flex-col flex-1 min-w-0">
+            <div className="flex-1 flex flex-col">
                 <Navbar />
 
-                <main className="flex-1 px-6 py-6 max-w-12xl w-full mx-auto space-y-6">
-                    {/* Başlık */}
-                    <div>
-                        <p className="text-xs text-slate-500 mb-1">
-                            Şirket #{companyId} / Çalışan #{employeeId} / Payrolllar
-                        </p>
-                        <h1 className="text-2xl font-bold">Payrolllar</h1>
-                        <p className="text-sm text-slate-500">
-                            Bu sayfadan seçili çalışanın maaş bordrolarını yönetebilirsin.
-                        </p>
-                    </div>
+                <main className="p-6 space-y-6">
+                    <h1 className="text-xl font-semibold">Payrolls</h1>
 
                     {error && (
-                        <p className="text-xs text-red-600">{error}</p>
+                        <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded">
+                            {error}
+                        </div>
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        {/* Sol: yeni payroll formu */}
-                        <div className="bg-white rounded-xl border p-4 md:col-span-1">
-                            <h2 className="font-semibold mb-3 text-sm">
-                                Yeni Payroll Oluştur
-                            </h2>
+                    {/* ----- CREATE ----- */}
+                    <div className="bg-white p-4 rounded shadow border space-y-3">
+                        <h2 className="font-semibold text-lg">Yeni Payroll Oluştur</h2>
 
-                            <form className="space-y-3" onSubmit={handleSubmit}>
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Dönem Başlangıç</label>
-                                    <input
-                                        type="date"
-                                        name="period_start"
-                                        value={form.period_start}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm"
-                                    />
-                                </div>
-
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Dönem Bitiş</label>
-                                    <input
-                                        type="date"
-                                        name="period_end"
-                                        value={form.period_end}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm"
-                                    />
-                                </div>
-
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Brüt Maaş</label>
-                                    <input
-                                        name="gross_salary"
-                                        value={form.gross_salary}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm"
-                                        placeholder="150000"
-                                    />
-                                </div>
-
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">
-                                        Net Maaş (opsiyonel)
-                                    </label>
-                                    <input
-                                        name="net_salary"
-                                        value={form.net_salary}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm"
-                                        placeholder="120000"
-                                    />
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    className="w-full bg-slate-900 text-white rounded py-2 text-sm hover:bg-slate-800"
-                                >
-                                    Kaydet
-                                </button>
-                            </form>
+                        <div className="grid grid-cols-2 gap-4">
+                            <input
+                                type="date"
+                                className="border p-2 rounded"
+                                placeholder="Period Start"
+                                value={form.period_start}
+                                onChange={(e) => setForm({ ...form, period_start: e.target.value })}
+                            />
+                            <input
+                                type="date"
+                                className="border p-2 rounded"
+                                placeholder="Period End"
+                                value={form.period_end}
+                                onChange={(e) => setForm({ ...form, period_end: e.target.value })}
+                            />
+                            <input
+                                type="number"
+                                className="border p-2 rounded"
+                                placeholder="Gross Salary"
+                                value={form.gross_salary}
+                                onChange={(e) => setForm({ ...form, gross_salary: e.target.value })}
+                            />
+                            <input
+                                type="number"
+                                className="border p-2 rounded"
+                                placeholder="Net Salary"
+                                value={form.net_salary}
+                                onChange={(e) => setForm({ ...form, net_salary: e.target.value })}
+                            />
                         </div>
 
-                        {/* Sağ: payroll listesi */}
-                        <div className="bg-white rounded-xl border p-4 md:col-span-3">
-                            <h2 className="font-semibold mb-3 text-sm">
-                                Payroll Listesi
-                            </h2>
+                        <button
+                            disabled={creating}
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                            onClick={handleCreate}
+                        >
+                            {creating ? "Oluşturuluyor..." : "Oluştur"}
+                        </button>
+                    </div>
 
-                            {loading ? (
-                                <p className="text-sm text-slate-500">Yükleniyor...</p>
-                            ) : payrolls.length === 0 ? (
-                                <p className="text-sm text-slate-500">
-                                    Henüz payroll yok. Soldaki formdan ekleyebilirsin.
-                                </p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full text-sm">
-                                        <thead>
-                                            <tr className="border-b text-xs text-slate-500">
-                                                <th className="text-left py-2 pr-4">ID</th>
-                                                <th className="text-left py-2 pr-4">Dönem</th>
-                                                <th className="text-left py-2 pr-4">Brüt</th>
-                                                <th className="text-left py-2 pr-4">Net</th>
-                                                <th className="text-left py-2 pr-4">Durum</th>
-                                                <th className="text-left py-2">Aksiyonlar</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {payrolls.map((p) => (
-                                                <tr
-                                                    key={p.id}
-                                                    className="border-b last:border-0 hover:bg-slate-50 align-top"
-                                                >
-                                                    <td className="py-2 pr-4 text-xs text-slate-500">
-                                                        #{p.id}
-                                                    </td>
-                                                    <td className="py-2 pr-4 text-xs">
-                                                        {p.period_start} → {p.period_end}
-                                                    </td>
-                                                    <td className="py-2 pr-4 text-xs">
-                                                        {p.gross_salary} ₺
-                                                    </td>
-                                                    <td className="py-2 pr-4 text-xs">
-                                                        {p.net_salary} ₺
-                                                    </td>
-                                                    <td className="py-2 pr-4 text-xs">
-                                                        <StatusBadge status={p.status} />
-                                                        {statusMap[p.id] && (
-                                                            <div className="mt-1 text-[10px] text-slate-500 font-mono break-all max-w-xs">
-                                                                {/* status endpoint'inden gelen raw json'u küçük yazıyla gösteriyoruz */}
-                                                                {JSON.stringify(statusMap[p.id])}
-                                                            </div>
+                    {/* ----- LIST ----- */}
+                    <div className="bg-white p-4 rounded shadow border">
+                        <h2 className="font-semibold text-lg mb-4">Payroll Listesi</h2>
+
+                        {loading ? (
+                            <div className="text-slate-500 text-sm">Yükleniyor...</div>
+                        ) : payrolls.length === 0 ? (
+                            <div className="text-slate-500 text-sm">Henüz payroll yok.</div>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b">
+                                        <th className="p-2 text-left">ID</th>
+                                        <th className="p-2 text-left">Dönem</th>
+                                        <th className="p-2 text-left">Tutar</th>
+                                        <th className="p-2 text-left">Status</th>
+                                        <th className="p-2 text-left">NFT</th>
+                                        <th className="p-2 text-left">Aksiyonlar</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {payrolls.map((p) => (
+                                        <tr key={p.id} className="border-b">
+                                            <td className="p-2">{p.id}</td>
+                                            <td className="p-2">
+                                                {p.period_start} → {p.period_end}
+                                            </td>
+                                            <td className="p-2">{p.net_salary}</td>
+                                            <td className="p-2">{badge(p.status)}</td>
+
+                                            <td className="p-2">
+                                                {p.nft ? (
+                                                    <div className="space-y-1">
+                                                        <div className="text-xs">{badge(p.nft.status)}</div>
+
+                                                        {p.nft.ipfs_cid && (
+                                                            <a
+                                                                className="text-blue-600 underline text-xs"
+                                                                href={`https://ipfs.io/ipfs/${p.nft.ipfs_cid}`}
+                                                                target="_blank"
+                                                            >
+                                                                IPFS Metadata
+                                                            </a>
                                                         )}
-                                                    </td>
-                                                    <td className="py-2">
-                                                        <div className="flex flex-wrap gap-1">
-                                                            <button
-                                                                className="text-[11px] border rounded px-2 py-1 hover:bg-slate-100"
-                                                                onClick={() => handleQueue(p.id)}
-                                                                disabled={actionLoadingId === p.id}
+
+                                                        {p.nft.tx_hash && (
+                                                            <a
+                                                                className="text-green-600 underline text-xs"
+                                                                href={`https://sepolia.etherscan.io/tx/${p.nft.tx_hash}`}
+                                                                target="_blank"
                                                             >
-                                                                Queue
-                                                            </button>
-                                                            <button
-                                                                className="text-[11px] border rounded px-2 py-1 hover:bg-slate-100"
-                                                                onClick={() => handleStatus(p.id)}
-                                                                disabled={actionLoadingId === p.id}
-                                                            >
-                                                                Status
-                                                            </button>
-                                                            <button
-                                                                className="text-[11px] border rounded px-2 py-1 hover:bg-slate-100"
-                                                                onClick={() => handleRetryMint(p.id)}
-                                                                disabled={actionLoadingId === p.id}
-                                                            >
-                                                                Mint Retry
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                        </div>
+                                                                Etherscan
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    "-"
+                                                )}
+                                            </td>
+
+                                            <td className="p-2 space-x-2">
+                                                {/* QUEUE */}
+                                                <button
+                                                    onClick={() => handleQueueMint(p.id)}
+                                                    className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                                                >
+                                                    Queue
+                                                </button>
+
+                                                {/* STATUS */}
+                                                <button
+                                                    onClick={() => handleStatus(p.id)}
+                                                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                                                >
+                                                    Status
+                                                </button>
+
+                                                {/* RETRY */}
+                                                <button
+                                                    onClick={() => handleRetry(p.id)}
+                                                    className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
+                                                >
+                                                    Retry Mint
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </main>
             </div>

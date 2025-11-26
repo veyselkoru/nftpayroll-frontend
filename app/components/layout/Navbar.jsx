@@ -1,8 +1,16 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { logoutApi } from "@/lib/auth";
+
 export default function Navbar() {
-    // Şimdilik fake kullanıcı ismi, auth ekleyince burayı gerçek yaparız
-    const userName = "Admin Kullanıcı";
+    const router = useRouter();
+    const userName = "Admin Kullanıcı"; // İleride /me'den çekeriz
+
+    const handleLogout = async () => {
+        await logoutApi();
+        router.replace("/login");
+    };
 
     return (
         <header className="h-14 bg-white border-b flex items-center justify-between px-6">
@@ -10,7 +18,10 @@ export default function Navbar() {
 
             <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-600">{userName}</span>
-                <button className="text-xs border rounded px-3 py-1 hover:bg-slate-50">
+                <button
+                    onClick={handleLogout}
+                    className="text-xs border rounded px-3 py-1 hover:bg-slate-50"
+                >
                     Çıkış Yap
                 </button>
             </div>

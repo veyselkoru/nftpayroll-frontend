@@ -1,56 +1,30 @@
 "use client";
 
-import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
 import { listEmployeeNfts } from "@/lib/employees";
-
-function StatusBadge({ status }) {
-    const label =
-        status === "minted"
-            ? "Mint edildi"
-            : status === "pending"
-                ? "Bekliyor"
-                : status === "failed"
-                    ? "Hata"
-                    : status || "-";
-
-    const colorClass =
-        status === "minted"
-            ? "bg-emerald-100 text-emerald-800"
-            : status === "pending"
-                ? "bg-amber-100 text-amber-800"
-                : status === "failed"
-                    ? "bg-red-100 text-red-800"
-                    : "bg-slate-100 text-slate-700";
-
-    return (
-        <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${colorClass}`}
-        >
-            {label}
-        </span>
-    );
-}
+import { useAuthGuard } from "@/app/components/layout/useAuthGuard";
 
 export default function EmployeeNftsPage() {
+    const ready = useAuthGuard();
     const { companyId, employeeId } = useParams();
+
     const [nfts, setNfts] = useState([]);
     const [selected, setSelected] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
+    const [metaLoading, setMetaLoading] = useState(false);
+    const [metaError, setMetaError] = useState("");
+    const [metadata, setMetadata] = useState(null);
+
     useEffect(() => {
-        const token =
-            typeof window !== "undefined" && localStorage.getItem("token");
-        if (!token) {
-            // token yoksa login'e at
-            window.location.href = "/login";
-            return;
-        }
+        if (!ready) return;
 
         setLoading(true);
+        setError("");
         listEmployeeNfts(companyId, employeeId)
             .then((data) => {
                 const list = Array.isArray(data) ? data : data.data || [];
@@ -61,160 +35,196 @@ export default function EmployeeNftsPage() {
                 setError(err.message || "NFT listesi alınamadı");
             })
             .finally(() => setLoading(false));
-    }, [companyId, employeeId]);
+    }, [ready, companyId, employeeId]);
+
+    const handleSelect = (nft) => {
+        setSelected(nft);
+        setMetadata(null);
+        setMetaError("");
+    };
+
+    const fetchMetadata = async () => {
+        if (!selected?.ipfs_cid) return;
+        setMetaLoading(true);
+        setMetaError("");
+        setMetadata(null);
+
+        try {
+            const res = await fetch(`https://ipfs.io/ipfs/${selected.ipfs_cid}`);
+            if (!res.ok) {
+                throw new Error(`IPFS error (${res.status})`);
+            }
+            const json = await res.json();
+            setMetadata(json);
+        } catch (err) {
+            setMetaError(err.message || "Metadata alınamadı");
+        } finally {
+            setMetaLoading(false);
+        }
+    };
+
+    const statusBadge = (status) => {
+        const colors = {
+            pending: "bg-yellow-100 text-yellow-700",
+            sending: "bg-blue-100 text-blue-700",
+            sent: "bg-green-100 text-green-700",
+            failed: "bg-red-100 text-red-700",
+        };
+
+        return (
+            <span
+                className={`inline-flex items-center px-2 py-1 text-xs rounded ${colors[status] || "bg-gray-100 text-gray-700"}`}
+            >
+                {status || "unknown"}
+            </span>
+        );
+    };
+
+    if (!ready) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+                Yükleniyor...
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex bg-slate-100">
             <Sidebar />
-
-            <div className="flex flex-col flex-1 min-w-0">
+            <div className="flex-1 flex flex-col">
                 <Navbar />
 
-                <main className="flex-1 px-6 py-6 max-w-6xl w-full mx-auto space-y-6">
-                    {/* Başlık */}
-                    <div>
-                        <p className="text-xs text-slate-500 mb-1">
-                            Şirket #{companyId} / Çalışan #{employeeId} / NFT&apos;ler
-                        </p>
-                        <h1 className="text-2xl font-bold">Payroll NFT&apos;leri</h1>
-                        <p className="text-sm text-slate-500">
-                            Bu sayfada seçili çalışanın mint edilen payroll NFT&apos;lerini görüntülüyorsun.
-                        </p>
-                    </div>
+                <main className="p-6 space-y-6 max-w-6xl mx-auto w-full">
+                    <h1 className="text-xl font-semibold">Çalışan NFT&apos;leri</h1>
 
-                    {error && <p className="text-xs text-red-600">{error}</p>}
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Sol: liste */}
-                        <div className="bg-white rounded-xl border p-4">
-                            <h2 className="font-semibold mb-3 text-sm">NFT Listesi</h2>
-
-                            {loading ? (
-                                <p className="text-sm text-slate-500">Yükleniyor...</p>
-                            ) : nfts.length === 0 ? (
-                                <p className="text-sm text-slate-500">
-                                    Henüz NFT bulunmuyor. Payroll mint işlemleri tamamlandığında burada görünecek.
-                                </p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="min-w-full text-sm">
-                                        <thead>
-                                            <tr className="border-b text-xs text-slate-500">
-                                                <th className="text-left py-2 pr-4">Token ID</th>
-                                                <th className="text-left py-2 pr-4">Durum</th>
-                                                <th className="text-left py-2 pr-4">Dönem</th>
-                                                <th className="text-left py-2">Tx Hash</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {nfts.map((n) => (
-                                                <tr
-                                                    key={n.id}
-                                                    className="border-b last:border-0 hover:bg-slate-50 cursor-pointer"
-                                                    onClick={() => setSelected(n)}
-                                                >
-                                                    <td className="py-2 pr-4 text-xs font-mono">
-                                                        {n.token_id ?? "-"}
-                                                    </td>
-                                                    <td className="py-2 pr-4 text-xs">
-                                                        <StatusBadge status={n.status} />
-                                                    </td>
-                                                    <td className="py-2 pr-4 text-xs">
-                                                        {n.payroll
-                                                            ? `${n.payroll.period_start} → ${n.payroll.period_end}`
-                                                            : "-"}
-                                                    </td>
-                                                    <td className="py-2 text-[11px] text-slate-600">
-                                                        <span className="font-mono break-all">
-                                                            {n.tx_hash || "-"}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                    {error && (
+                        <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded">
+                            {error}
                         </div>
+                    )}
 
-                        {/* Sağ: seçili NFT detayı */}
-                        <div className="bg-white rounded-xl border p-4">
-                            <h2 className="font-semibold mb-3 text-sm">
-                                NFT Detayı
-                            </h2>
+                    {loading ? (
+                        <div className="text-sm text-slate-500">Yükleniyor...</div>
+                    ) : nfts.length === 0 ? (
+                        <div className="text-sm text-slate-500">
+                            Bu çalışana ait NFT bulunamadı.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Sol liste */}
+                            <div className="md:col-span-1 bg-white border rounded-xl p-3 space-y-2 max-h-[480px] overflow-auto">
+                                {nfts.map((n) => (
+                                    <button
+                                        key={n.id}
+                                        onClick={() => handleSelect(n)}
+                                        className={`w-full text-left border rounded-lg p-3 text-sm mb-1 ${selected?.id === n.id
+                                                ? "border-blue-500 bg-blue-50"
+                                                : "border-slate-200 hover:bg-slate-50"
+                                            }`}
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            <span className="font-medium">NFT #{n.id}</span>
+                                            {statusBadge(n.status)}
+                                        </div>
+                                        <div className="mt-1 text-xs text-slate-500 break-all">
+                                            {n.tx_hash
+                                                ? `${n.tx_hash.slice(0, 10)}...${n.tx_hash.slice(-6)}`
+                                                : "Tx yok"}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
 
-                            {!selected ? (
-                                <p className="text-sm text-slate-500">
-                                    Detay göstermek için listeden bir NFT seç.
-                                </p>
-                            ) : (
-                                <div className="space-y-2 text-sm">
-                                    <div>
-                                        <span className="font-semibold">Token ID: </span>
-                                        <span className="font-mono">
-                                            {selected.token_id ?? "-"}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold">Durum: </span>
-                                        <StatusBadge status={selected.status} />
-                                    </div>
-                                    {selected.payroll && (
-                                        <>
+                            {/* Sağ detay paneli */}
+                            <div className="md:col-span-2 bg-white border rounded-xl p-4 space-y-4">
+                                {selected ? (
+                                    <>
+                                        <div className="flex justify-between items-center">
                                             <div>
-                                                <span className="font-semibold">Dönem: </span>
-                                                {selected.payroll.period_start} →{" "}
-                                                {selected.payroll.period_end}
+                                                <div className="text-sm text-slate-500">
+                                                    Seçili NFT
+                                                </div>
+                                                <div className="text-lg font-semibold">
+                                                    NFT #{selected.id}
+                                                </div>
+                                            </div>
+                                            <div>{statusBadge(selected.status)}</div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <div className="text-xs text-slate-500">
+                                                    Token ID
+                                                </div>
+                                                <div className="font-mono">
+                                                    {selected.token_id ?? "-"}
+                                                </div>
                                             </div>
                                             <div>
-                                                <span className="font-semibold">Brüt / Net: </span>
-                                                {selected.payroll.gross_salary} ₺ /{" "}
-                                                {selected.payroll.net_salary} ₺
+                                                <div className="text-xs text-slate-500">Tx Hash</div>
+                                                {selected.tx_hash ? (
+                                                    <a
+                                                        href={`https://sepolia.etherscan.io/tx/${selected.tx_hash}`}
+                                                        target="_blank"
+                                                        className="text-blue-600 underline break-all"
+                                                    >
+                                                        {selected.tx_hash}
+                                                    </a>
+                                                ) : (
+                                                    <div className="text-slate-500">-</div>
+                                                )}
                                             </div>
-                                        </>
-                                    )}
-                                    <div>
-                                        <span className="font-semibold">Tx Hash: </span>
-                                        <span className="font-mono break-all">
-                                            {selected.tx_hash || "-"}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold">IPFS CID: </span>
-                                        <span className="font-mono break-all">
-                                            {selected.ipfs_cid || "-"}
-                                        </span>
-                                    </div>
-                                    {selected.ipfs_url && (
-                                        <div>
-                                            <span className="font-semibold">IPFS URL: </span>
-                                            <a
-                                                href={selected.ipfs_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-xs text-blue-600 underline break-all"
-                                            >
-                                                {selected.ipfs_url}
-                                            </a>
+                                            <div>
+                                                <div className="text-xs text-slate-500">IPFS CID</div>
+                                                {selected.ipfs_cid ? (
+                                                    <a
+                                                        href={`https://ipfs.io/ipfs/${selected.ipfs_cid}`}
+                                                        target="_blank"
+                                                        className="text-blue-600 underline break-all"
+                                                    >
+                                                        {selected.ipfs_cid}
+                                                    </a>
+                                                ) : (
+                                                    <div className="text-slate-500">-</div>
+                                                )}
+                                            </div>
                                         </div>
-                                    )}
-                                    {selected.explorer_url && (
-                                        <div>
-                                            <span className="font-semibold">Explorer: </span>
-                                            <a
-                                                href={selected.explorer_url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-xs text-blue-600 underline break-all"
+
+                                        <div className="flex items-center justify-between mt-2">
+                                            <div className="text-sm font-semibold">
+                                                Metadata (IPFS)
+                                            </div>
+                                            <button
+                                                disabled={!selected.ipfs_cid || metaLoading}
+                                                onClick={fetchMetadata}
+                                                className="text-xs px-3 py-1 rounded border bg-slate-50 hover:bg-slate-100 disabled:opacity-50"
                                             >
-                                                {selected.explorer_url}
-                                            </a>
+                                                {metaLoading ? "Yükleniyor..." : "Metadata’yı getir"}
+                                            </button>
                                         </div>
-                                    )}
-                                </div>
-                            )}
+
+                                        <div className="border rounded-lg bg-slate-50 p-3 max-h-64 overflow-auto text-xs font-mono whitespace-pre-wrap">
+                                            {metaError && (
+                                                <div className="text-red-600">{metaError}</div>
+                                            )}
+                                            {!metaError && metadata && (
+                                                <pre>{JSON.stringify(metadata, null, 2)}</pre>
+                                            )}
+                                            {!metaError && !metadata && !metaLoading && (
+                                                <span className="text-slate-500">
+                                                    Henüz metadata yüklenmedi.
+                                                </span>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="text-sm text-slate-500">
+                                        Soldan bir NFT seç.
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </main>
             </div>
         </div>
