@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, Users, BadgeDollarSign } from "lucide-react";
+import { LayoutDashboard, Building2, Users, BadgeDollarSign, FileStack } from "lucide-react";
 
 const menu = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Şirketler", href: "/companies", icon: Building2 },
-    { label: "Çalışanlar", href: "/employees", icon: Users },
-    { label: "Payroll", href: "/payrolls", icon: BadgeDollarSign },
+    { label: "Raporlar", href: "/reports", icon: FileStack },
 ];
 
 export default function Sidebar() {

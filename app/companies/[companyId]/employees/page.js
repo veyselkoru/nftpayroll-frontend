@@ -13,11 +13,15 @@ export default function EmployeesPage() {
     const router = useRouter();
     const [employees, setEmployees] = useState([]);
     const [form, setForm] = useState({
+        employee_code: "",
         name: "",
-        surname: "",
-        wallet_address: "",   // backend alan adına göre ayarla
+        tc_no: "",
         position: "",
+        department: "",
+        start_date: "",
+        wallet_address: "",
     });
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
@@ -49,19 +53,35 @@ export default function EmployeesPage() {
         setError("");
         try {
             const payload = {
+                employee_code: form.employee_code || null,
                 name: form.name,
                 surname: form.surname,
-                wallet_address: form.wallet_address, // backend’e göre burayı değiştir
-                // position backend'de varsa buraya ekleyebilirsin
+                tc_no: form.tc_no || null,
+                position: form.position || null,
+                department: form.department || null,
+                start_date: form.start_date || null,
+                wallet_address: form.wallet_address || null,
             };
 
             const created = await createEmployeeApi(companyId, payload);
-            setEmployees((prev) => [...prev, created]);
-            setForm({ name: "", surname: "", wallet_address: "", position: "" });
+            const item = created?.data || created;
+
+            setEmployees((prev) => [...prev, item]);
+
+            setForm({
+                employee_code: "",
+                name: "",
+                tc_no: "",
+                position: "",
+                department: "",
+                start_date: "",
+                wallet_address: "",
+            });
         } catch (err) {
-            setError(err.message);
+            setError(err.message || "Kayıt sırasında bir hata oluştu.");
         }
     };
+
 
     if (!ready) {
         return (
@@ -103,31 +123,80 @@ export default function EmployeesPage() {
                                 Yeni Çalışan Ekle
                             </h2>
 
-                            <form className="space-y-3" onSubmit={handleSubmit}>
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Ad</label>
-                                    <input
-                                        name="name"
-                                        value={form.name}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                        placeholder="Örn: Ali"
-                                    />
+                            <form onSubmit={handleSubmit} className="space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Çalışan Kodu</label>
+                                        <input
+                                            name="employee_code"
+                                            value={form.employee_code}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Örn: EMP-001"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Ad Soyad</label>
+                                        <input
+                                            name="name"
+                                            value={form.name}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Örn: Ahmet Yılmaz"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">TC Kimlik No</label>
+                                        <input
+                                            name="tc_no"
+                                            value={form.tc_no}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="11 haneli"
+                                            maxLength={11}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">İşe Başlama Tarihi</label>
+                                        <input
+                                            type="date"
+                                            name="start_date"
+                                            value={form.start_date}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Pozisyon</label>
+                                        <input
+                                            name="position"
+                                            value={form.position}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Örn: Yazılım Geliştirici"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Departman</label>
+                                        <input
+                                            name="department"
+                                            value={form.department}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Örn: AR-GE"
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Soyad</label>
-                                    <input
-                                        name="surname"
-                                        value={form.surname}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                        placeholder="Örn: Yılmaz"
-                                    />
-                                </div>
-
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">Wallet Adresi</label>
+                                    <label className="text-slate-600">Wallet Adresi (opsiyonel)</label>
                                     <input
                                         name="wallet_address"
                                         value={form.wallet_address}
@@ -135,20 +204,9 @@ export default function EmployeesPage() {
                                         className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
                                         placeholder="0x..."
                                     />
-                                </div>
-
-                                {/* Eğer backend’de position alanı varsa burayı da API’ye ekleyebilirsin */}
-                                <div className="space-y-1 text-sm">
-                                    <label className="text-slate-600">
-                                        Pozisyon (sadece UI, şimdilik opsiyonel)
-                                    </label>
-                                    <input
-                                        name="position"
-                                        value={form.position}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                        placeholder="Örn: Yazılım Geliştirici"
-                                    />
+                                    <p className="text-[11px] text-slate-500">
+                                        Boş bırakılırsa bu çalışan için şimdilik NFT mint edilmeyebilir.
+                                    </p>
                                 </div>
 
                                 <button
@@ -158,6 +216,7 @@ export default function EmployeesPage() {
                                     Kaydet
                                 </button>
                             </form>
+
                         </div>
 
                         {/* Sağ: Çalışan listesi */}
@@ -198,29 +257,24 @@ export default function EmployeesPage() {
                                                     <td className="py-2 pr-4 text-xs text-slate-600">
                                                         {e.wallet_address || e.wallet || "-"}
                                                     </td>
-                                                    <td className="py-2">
-                                                        <div className="flex flex-wrap gap-1">
-                                                            <button
-                                                                className="text-xs border rounded px-3 py-1 hover:bg-slate-100"
-                                                                onClick={() =>
-                                                                    router.push(
-                                                                        `/companies/${companyId}/employees/${e.id}/payrolls`
-                                                                    )
-                                                                }
-                                                            >
-                                                                Payrolllar
-                                                            </button>
-                                                            <button
-                                                                className="text-xs border rounded px-3 py-1 hover:bg-slate-100"
-                                                                onClick={() =>
-                                                                    router.push(
-                                                                        `/companies/${companyId}/employees/${e.id}/nfts`
-                                                                    )
-                                                                }
-                                                            >
-                                                                NFT&apos;ler
-                                                            </button>
-                                                        </div>
+                                                    <td className="p-2 text-right space-x-2">
+                                                        <button
+                                                            onClick={() =>
+                                                                router.push(`/companies/${companyId}/employees/${e.id}`)
+                                                            }
+                                                            className="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                                                        >
+                                                            Detay
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() =>
+                                                                router.push(`/companies/${companyId}/employees/${e.id}/payrolls`)
+                                                            }
+                                                            className="text-xs px-2 py-1 rounded bg-slate-900 text-white hover:bg-slate-800"
+                                                        >
+                                                            Payroll&apos;lar
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}

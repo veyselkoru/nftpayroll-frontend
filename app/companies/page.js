@@ -11,7 +11,18 @@ export default function CompaniesPage() {
 
     const router = useRouter();
     const [companies, setCompanies] = useState([]);
-    const [form, setForm] = useState({ name: "", taxNo: "" });
+    const [form, setForm] = useState({
+        name: "",
+        type: "",
+        tax_number: "",
+        registration_number: "",
+        country: "",
+        city: "",
+        address: "",
+        contact_phone: "",
+        contact_email: "",
+    });
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
@@ -42,15 +53,40 @@ export default function CompaniesPage() {
 
         setError("");
         try {
-            const payload = { name: form.name };
-            // Laravel Company modelinde tax_no vs varsa burada genişletirsin
+            const payload = {
+                name: form.name,
+                type: form.type || null,
+                tax_number: form.tax_number || null,
+                registration_number: form.registration_number || null,
+                country: form.country || null,
+                city: form.city || null,
+                address: form.address || null,
+                contact_phone: form.contact_phone || null,
+                contact_email: form.contact_email || null,
+            };
+
             const created = await createCompanyApi(payload);
-            setCompanies((prev) => [...prev, created]);
-            setForm({ name: "", taxNo: "" });
+            const listItem = Array.isArray(created?.data) ? created.data : created;
+
+            setCompanies((prev) => [...prev, listItem]);
+
+            setForm({
+                name: "",
+                type: "",
+                tax_number: "",
+                registration_number: "",
+                country: "",
+                city: "",
+                address: "",
+                contact_phone: "",
+                contact_email: "",
+            });
         } catch (err) {
             setError(err.message);
         }
     };
+
+
 
     return (
         <div className="min-h-screen flex bg-slate-100">
@@ -91,6 +127,102 @@ export default function CompaniesPage() {
                                     />
                                 </div>
 
+                                <div className="space-y-1 text-sm">
+                                    <label className="text-slate-600">Şirket Türü</label>
+                                    <select
+                                        name="type"
+                                        value={form.type}
+                                        onChange={handleChange}
+                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                    >
+                                        <option value="">Seçiniz</option>
+                                        <option value="Sole Proprietorship">Şahıs</option>
+                                        <option value="Limited">Limited (LTD)</option>
+                                        <option value="Joint-Stock">Anonim (A.Ş.)</option>
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Vergi No</label>
+                                        <input
+                                            name="tax_number"
+                                            value={form.tax_number}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Vergi No"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Ticaret Sicil No</label>
+                                        <input
+                                            name="registration_number"
+                                            value={form.registration_number}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Ticaret Sicil No"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Ülke</label>
+                                        <input
+                                            name="country"
+                                            value={form.country}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Örn: Türkiye"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">Şehir</label>
+                                        <input
+                                            name="city"
+                                            value={form.city}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="Örn: İstanbul"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-1 text-sm">
+                                    <label className="text-slate-600">Adres</label>
+                                    <input
+                                        name="address"
+                                        value={form.address}
+                                        onChange={handleChange}
+                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                        placeholder="Kısa adres"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">İrtibat Telefonu</label>
+                                        <input
+                                            name="contact_phone"
+                                            value={form.contact_phone}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="+90 ..."
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-slate-600">İletişim E-posta</label>
+                                        <input
+                                            type="email"
+                                            name="contact_email"
+                                            value={form.contact_email}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                            placeholder="info@firma.com"
+                                        />
+                                    </div>
+                                </div>
+
                                 <button
                                     type="submit"
                                     className="w-full bg-slate-900 text-white rounded py-2 text-sm hover:bg-slate-800"
@@ -98,6 +230,7 @@ export default function CompaniesPage() {
                                     Kaydet
                                 </button>
                             </form>
+
                         </div>
 
                         {/* Şirket listesi */}
@@ -130,16 +263,34 @@ export default function CompaniesPage() {
                                                         #{c.id}
                                                     </td>
                                                     <td className="py-2 pr-4 font-medium">{c.name}</td>
-                                                    <td className="py-2">
+                                                    <td className="py-2 space-x-2">
+                                                        <button
+                                                            className="text-xs border rounded px-3 py-1 hover:bg-slate-100"
+                                                            onClick={() => router.push(`/companies/${c.id}`)}
+                                                        >
+                                                            Detay
+                                                        </button>
+
                                                         <button
                                                             className="text-xs border rounded px-3 py-1 hover:bg-slate-100"
                                                             onClick={() =>
                                                                 router.push(`/companies/${c.id}/employees`)
                                                             }
                                                         >
-                                                            Detay / Çalışanlar
+                                                            Çalışanlar
+                                                        </button>
+
+                                                        <button
+                                                            className="text-xs border rounded px-3 py-1 hover:bg-slate-100"
+                                                            onClick={() =>
+                                                                router.push(`/companies/${c.id}/nfts`)
+                                                            }
+                                                        >
+                                                            NFT&apos;ler
                                                         </button>
                                                     </td>
+
+
                                                 </tr>
                                             ))}
                                         </tbody>
