@@ -26,6 +26,24 @@ export default function CompaniesPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
+    const formatPhoneTR = (value) => {
+        const digits = value.replace(/\D/g, "").slice(0, 11); // max 11 hane
+        if (!digits) return "";
+
+        let result = "";
+
+        // 0 XXXXXXXXXXX -> 0 555 555 55 55
+        for (let i = 0; i < digits.length; i++) {
+            if (i === 1 || i === 4 || i === 7 || i === 9) {
+                result += " ";
+            }
+            result += digits[i];
+        }
+
+        return result;
+    };
+
+
     // İlk yüklemede companies çek
     useEffect(() => {
         setLoading(true);
@@ -44,8 +62,27 @@ export default function CompaniesPage() {
             .finally(() => setLoading(false));
     }, [router]);
 
-    const handleChange = (e) =>
-        setForm({ ...form, [e.target.name]: e.target.value });
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+
+        // Vergi no -> sadece rakam, max 10 hane
+        if (name === "tax_number") {
+            const digits = value.replace(/\D/g, "").slice(0, 10);
+            setForm((prev) => ({ ...prev, [name]: digits }));
+            return;
+        }
+
+        // Telefon -> Türkçe format
+        if (name === "contact_phone") {
+            const formatted = formatPhoneTR(value);
+            setForm((prev) => ({ ...prev, [name]: formatted }));
+            return;
+        }
+
+        setForm((prev) => ({ ...prev, [name]: value }));
+    };
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -203,12 +240,14 @@ export default function CompaniesPage() {
                                     <div className="space-y-1">
                                         <label className="text-slate-600">İrtibat Telefonu</label>
                                         <input
+                                            type="tel"
                                             name="contact_phone"
                                             value={form.contact_phone}
                                             onChange={handleChange}
+                                            placeholder="0 555 555 55 55"
                                             className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                            placeholder="+90 ..."
                                         />
+
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-slate-600">İletişim E-posta</label>

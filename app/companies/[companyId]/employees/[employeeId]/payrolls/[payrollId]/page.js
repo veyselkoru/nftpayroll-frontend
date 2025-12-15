@@ -5,13 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
 import { useAuthGuard } from "@/app/components/layout/useAuthGuard";
+import { useToast } from "@/app/components/ToastProvider";
 
 import {
-    fetchPayrollDetail,
-    queuePayrollApi,
-    payrollStatusApi,
-    retryMintApi,
+    fetchPayrolls,
     decryptPayrollApi,
+    queuePayrollApi,
+    retryMintApi,
 } from "@/lib/payrolls";
 
 export default function PayrollDetailPage() {
@@ -22,31 +22,36 @@ export default function PayrollDetailPage() {
     const [payroll, setPayroll] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+    const { showToast } = useToast();
 
-    const [decryptState, setDecryptState] = useState({
+
+    const [decryptModal, setDecryptModal] = useState({
+        open: false,
         loading: false,
         error: "",
         payload: null,
     });
 
-    const [actionLoading, setActionLoading] = useState(false);
-
     useEffect(() => {
-        if (!ready || !companyId || !employeeId || !payrollId) return;
+        if (!ready) return;
 
         const load = async () => {
-            setLoading(true);
-            setError("");
-
             try {
-                const res = await fetchPayrollDetail(
-                    companyId,
-                    employeeId,
-                    payrollId
-                );
-                setPayroll(res.payroll || res.data || res);
+                setLoading(true);
+                setError("");
+
+                // Basit çözüm: çalışan tüm payrollları çek, id ile bul
+                const data = await fetchPayrolls(companyId, employeeId);
+                const list = Array.isArray(data) ? data : data.data || [];
+                const found = list.find((p) => String(p.id) === String(payrollId));
+
+                if (!found) {
+                    setError("Payroll bulunamadı");
+                } else {
+                    setPayroll(found);
+                }
             } catch (err) {
-                setError(err.message || "Payroll detay alınamadı");
+                setError(err.message || "Detay yüklenirken hata oluştu.");
             } finally {
                 setLoading(false);
             }
@@ -55,107 +60,27 @@ export default function PayrollDetailPage() {
         load();
     }, [ready, companyId, employeeId, payrollId]);
 
-    const badge = (status) => {
-        const map = {
-            pending: "bg-yellow-100 text-yellow-700",
-            queued: "bg-blue-100 text-blue-700",
-            processing: "bg-blue-100 text-blue-700",
-            sent: "bg-green-100 text-green-700",
-            failed: "bg-red-100 text-red-700",
-        };
-
-        return (
-            <span
-                className={`inline-flex items-center px-2 py-1 text-xs rounded ${map[status] || "bg-gray-100 text-gray-700"
-                    }`}
-            >
-                {status || "unknown"}
-            </span>
-        );
-    };
-
-    // ---- Queue Mint ----
-    const handleQueue = async () => {
-        if (!payroll) return;
-        try {
-            setActionLoading(true);
-            await queuePayrollApi(companyId, employeeId, payroll.id);
-            // tekrar detay yükle
-            const res = await fetchPayrollDetail(
-                companyId,
-                employeeId,
-                payrollId
-            );
-            setPayroll(res.payroll || res.data || res);
-        } catch (err) {
-            alert(err.message || "Queue mint hata");
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // ---- Status ----
-    const handleStatus = async () => {
-        if (!payroll) return;
-        try {
-            const res = await payrollStatusApi(
-                companyId,
-                employeeId,
-                payroll.id
-            );
-            alert("Güncel durum: " + JSON.stringify(res, null, 2));
-        } catch (err) {
-            alert(err.message || "Durum alınamadı");
-        }
-    };
-
-    // ---- Retry ----
-    const handleRetry = async () => {
-        if (!payroll) return;
-        try {
-            setActionLoading(true);
-            await retryMintApi(companyId, employeeId, payroll.id);
-            const res = await fetchPayrollDetail(
-                companyId,
-                employeeId,
-                payrollId
-            );
-            setPayroll(res.payroll || res.data || res);
-        } catch (err) {
-            alert(err.message || "Retry mint hata");
-        } finally {
-            setActionLoading(false);
-        }
-    };
-
-    // ---- Decrypt ----
     const handleDecrypt = async () => {
         if (!payroll) return;
 
-        setDecryptState({
+        setDecryptModal({
+            open: true,
             loading: true,
             error: "",
             payload: null,
         });
 
         try {
-            const res = await decryptPayrollApi(
-                companyId,
-                employeeId,
-                payroll.id
-            );
-
-            setDecryptState({
+            const res = await decryptPayrollApi(companyId, employeeId, payroll.id);
+            setDecryptModal({
+                open: true,
                 loading: false,
                 error: "",
-                payload:
-                    res.decrypted_payload ||
-                    res.payload ||
-                    res.data?.decrypted_payload ||
-                    null,
+                payload: res.decrypted_payload || res.payload || null,
             });
         } catch (err) {
-            setDecryptState({
+            setDecryptModal({
+                open: true,
                 loading: false,
                 error: err.message || "Decrypt failed",
                 payload: null,
@@ -163,310 +88,407 @@ export default function PayrollDetailPage() {
         }
     };
 
-    const goBack = () => {
-        router.push(
-            `/companies/${companyId}/employees/${employeeId}/payrolls`
+    const closeDecryptModal = () => {
+        setDecryptModal({
+            open: false,
+            loading: false,
+            error: "",
+            payload: null,
+        });
+    };
+
+    const handleQueueMint = async () => {
+        if (!payroll) return;
+        try {
+            await queuePayrollApi(companyId, employeeId, payroll.id);
+            showToast("Mint kuyruğa eklendi", "success");
+        } catch (err) {
+            showToast(err.message || "Bir hata oluştu.", "error");
+        }
+    };
+
+    const handleRetryMint = async () => {
+        if (!payroll) return;
+        try {
+            await retryMintApi(companyId, employeeId, payroll.id);
+            showToast("Mint tekrar kuyruğa eklendi", "success");
+        } catch (err) {
+            showToast(err.message || "Bir hata oluştu.", "error");
+        }
+    };
+
+    const badge = (status) => {
+        const colors = {
+            pending: "bg-yellow-100 text-yellow-700",
+            queued: "bg-blue-100 text-blue-700",
+            minted: "bg-green-100 text-green-700",
+            mint_failed: "bg-red-100 text-red-700",
+            sending: "bg-blue-100 text-blue-700",
+            sent: "bg-green-100 text-green-700",
+            failed: "bg-red-100 text-red-700",
+        };
+
+        return (
+            <span
+                className={`px-2 py-1 text-xs rounded ${colors[status] || "bg-gray-200 text-gray-700"
+                    }`}
+            >
+                {status}
+            </span>
         );
     };
+
+    if (!ready) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+                Yükleniyor...
+            </div>
+        );
+    }
+
+    if (loading) {
+        return (
+            <div className="min-h-screen flex bg-slate-100">
+                <Sidebar />
+                <div className="flex-1 flex flex-col">
+                    <Navbar />
+                    <main className="p-6">
+                        <div className="text-sm text-slate-500">Detay yükleniyor...</div>
+                    </main>
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !payroll) {
+        return (
+            <div className="min-h-screen flex bg-slate-100">
+                <Sidebar />
+                <div className="flex-1 flex flex-col">
+                    <Navbar />
+                    <main className="p-6 space-y-3">
+                        <button
+                            onClick={() =>
+                                router.push(
+                                    `/companies/${companyId}/employees/${employeeId}/payrolls`
+                                )
+                            }
+                            className="text-xs px-3 py-1 bg-slate-900 text-white rounded"
+                        >
+                            ← Listeye Dön
+                        </button>
+                        <div className="bg-red-100 text-red-700 border border-red-300 px-4 py-2 rounded text-sm">
+                            {error || "Payroll bulunamadı."}
+                        </div>
+                    </main>
+                </div>
+            </div>
+        );
+    }
+
+    const nft = payroll.nft || payroll.nftMint || null;
+    const imageUrl = nft?.image_url || "/placeholder-nft.png";
 
     return (
         <div className="min-h-screen flex bg-slate-100">
             <Sidebar />
-
-            <div className="flex flex-col flex-1 min-w-0">
+            <div className="flex-1 flex flex-col">
                 <Navbar />
 
-                <main className="flex-1 p-4 md:p-6 space-y-4">
+                <main className="p-6 space-y-4">
+                    {/* Header */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <button
-                                onClick={goBack}
-                                className="text-xs text-slate-500 hover:text-slate-800 mb-1"
-                            >
-                                ← Payroll listesine dön
-                            </button>
                             <h1 className="text-xl font-semibold">
-                                Payroll Detay #{payrollId}
+                                Payroll Detay #{payroll.id}
                             </h1>
+                            <p className="text-xs text-slate-500">
+                                Çalışan ID: {payroll.employee_id}
+                            </p>
                         </div>
 
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                            <span>Company: {companyId}</span>
-                            <span>•</span>
+                        <div className="flex gap-2">
                             <button
-                                type="button"
                                 onClick={() =>
                                     router.push(
-                                        `/companies/${companyId}/employees/${employeeId}`
+                                        `/companies/${companyId}/employees/${employeeId}/payrolls`
                                     )
                                 }
-                                className="underline hover:text-slate-800"
+                                className="text-xs px-3 py-1 bg-slate-200 text-slate-700 rounded hover:bg-slate-300"
                             >
-                                Employee: {employeeId}
+                                ← Listeye Dön
                             </button>
                         </div>
                     </div>
 
+                    {/* Ana içerik: 2 kolon */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* Sol: NFT Kartı */}
+                        <div className="bg-white rounded-lg shadow border p-4 space-y-4">
+                            <h2 className="font-semibold text-sm mb-1">NFT</h2>
 
-                    {error && (
-                        <div className="text-sm text-red-600 bg-red-50 border border-red-100 px-3 py-2 rounded">
-                            {error}
-                        </div>
-                    )}
-
-                    {loading ? (
-                        <div className="text-sm text-slate-500">
-                            Yükleniyor...
-                        </div>
-                    ) : !payroll ? (
-                        <div className="text-sm text-slate-500">
-                            Payroll bulunamadı.
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                            {/* SOL: Payroll info */}
-                            <div className="bg-white rounded-xl border p-4 space-y-3 lg:col-span-1">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-xs text-slate-500">
-                                            Çalışan
-                                        </div>
-                                        <div className="font-semibold">
-                                            {payroll.employee?.name ||
-                                                `Employee #${payroll.employee_id}`}
-                                        </div>
+                            {nft ? (
+                                <>
+                                    <div className="w-full rounded-lg overflow-hidden border bg-slate-50">
+                                        <img
+                                            src={imageUrl}
+                                            alt="Payroll NFT"
+                                            className="w-full h-64 object-cover"
+                                        />
                                     </div>
-                                    <div>{badge(payroll.status)}</div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-3 text-sm mt-2">
-                                    <div>
-                                        <div className="text-xs text-slate-500">
-                                            Dönem
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-slate-600">Status</span>
+                                            {badge(nft.status)}
                                         </div>
-                                        <div>
-                                            {payroll.period_start} →{" "}
-                                            {payroll.period_end}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-xs text-slate-500">
-                                            Net / Brüt
-                                        </div>
-                                        <div>
-                                            {payroll.net_salary} /{" "}
-                                            {payroll.gross_salary}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div className="text-xs text-slate-500">
-                                            ID
-                                        </div>
-                                        <div>{payroll.id}</div>
-                                    </div>
-                                </div>
 
-                                <div className="pt-3 border-t border-slate-100 space-x-2 text-xs">
-                                    <button
-                                        onClick={handleQueue}
-                                        disabled={actionLoading}
-                                        className="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-60"
-                                    >
-                                        Queue Mint
-                                    </button>
-                                    <button
-                                        onClick={handleStatus}
-                                        className="px-3 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-                                    >
-                                        Status
-                                    </button>
-                                    <button
-                                        onClick={handleRetry}
-                                        disabled={actionLoading}
-                                        className="px-3 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 disabled:opacity-60"
-                                    >
-                                        Retry Mint
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* ORTA: NFT info */}
-                            <div className="bg-white rounded-xl border p-4 space-y-3 lg:col-span-1">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-xs text-slate-500">
-                                            NFT
-                                        </div>
-                                        <div className="font-semibold">
-                                            {payroll.nft_mint
-                                                ? `Mint #${payroll.nft_mint.id}`
-                                                : "Henüz mint yok"}
-                                        </div>
-                                    </div>
-                                    {payroll.nft_mint &&
-                                        badge(payroll.nft_mint.status)}
-                                </div>
-
-                                {payroll.nft_mint ? (
-                                    <div className="space-y-2 text-sm mt-2">
-                                        <div>
-                                            <div className="text-xs text-slate-500">
-                                                Token ID
+                                        {nft.token_id && (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">Token ID</span>
+                                                <span className="font-medium">
+                                                    {nft.token_id}
+                                                </span>
                                             </div>
-                                            <div>
-                                                {payroll.nft_mint.token_id ??
-                                                    "-"}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <div className="text-xs text-slate-500">
-                                                Tx Hash
-                                            </div>
-                                            {payroll.nft_mint.tx_hash ? (
-                                                <a
-                                                    href={`https://sepolia.etherscan.io/tx/${payroll.nft_mint.tx_hash}`}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="text-xs text-green-700 underline break-all"
+                                        )}
+
+                                        {nft.tx_hash && (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-slate-600">Tx Hash</span>
+                                                <button
+                                                    onClick={() =>
+                                                        navigator.clipboard.writeText(
+                                                            nft.tx_hash
+                                                        )
+                                                    }
+                                                    className="text-xs text-blue-600 underline"
                                                 >
-                                                    {payroll.nft_mint.tx_hash}
+                                                    Kopyala
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-col gap-1 mt-2">
+                                            {nft.ipfs_cid && (
+                                                <a
+                                                    href={`https://ipfs.io/ipfs/${nft.ipfs_cid}`}
+                                                    target="_blank"
+                                                    className="text-xs text-blue-600 underline"
+                                                >
+                                                    IPFS Metadata
                                                 </a>
-                                            ) : (
-                                                <div className="text-xs text-slate-400">
-                                                    Henüz tx yok
-                                                </div>
                                             )}
-                                        </div>
-                                        <div>
-                                            <div className="text-xs text-slate-500">
-                                                IPFS
-                                            </div>
-                                            {payroll.nft_mint.ipfs_cid ? (
+
+                                            {nft.tx_hash && (
                                                 <a
-                                                    href={`https://ipfs.io/ipfs/${payroll.nft_mint.ipfs_cid}`}
+                                                    href={`https://sepolia.etherscan.io/tx/${nft.tx_hash}`}
                                                     target="_blank"
-                                                    rel="noreferrer"
-                                                    className="text-xs text-blue-700 underline break-all"
+                                                    className="text-xs text-green-600 underline"
                                                 >
-                                                    {`https://ipfs.io/ipfs/${payroll.nft_mint.ipfs_cid}`}
+                                                    Etherscan
                                                 </a>
-                                            ) : (
-                                                <div className="text-xs text-slate-400">
-                                                    IPFS CID yok
-                                                </div>
                                             )}
                                         </div>
                                     </div>
-                                ) : (
-                                    <div className="mt-3 text-xs text-slate-500">
-                                        Bu payroll için henüz NFT mint
-                                        edilmemiş.
+
+                                    <div className="flex gap-2 mt-3">
+                                        <button
+                                            onClick={handleQueueMint}
+                                            className="flex-1 text-xs px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                                        >
+                                            Tekrar Queue
+                                        </button>
+                                        <button
+                                            onClick={handleRetryMint}
+                                            className="flex-1 text-xs px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                                        >
+                                            Retry Mint
+                                        </button>
                                     </div>
-                                )}
+                                </>
+                            ) : (
+                                <div className="text-sm text-slate-500">
+                                    Bu payroll için henüz NFT mint edilmemiş.
+                                    <div className="mt-2">
+                                        <button
+                                            onClick={handleQueueMint}
+                                            className="text-xs px-3 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                                        >
+                                            Queue Mint
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Sağ: Bordro Bilgileri */}
+                        <div className="bg-white rounded-lg shadow border p-4 space-y-4">
+                            <h2 className="font-semibold text-sm mb-1">Bordro Bilgileri</h2>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <div className="text-slate-500 text-xs">
+                                        Dönem Başlangıç
+                                    </div>
+                                    <div>{payroll.period_start}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">
+                                        Dönem Bitiş
+                                    </div>
+                                    <div>{payroll.period_end}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">Ödeme Tarihi</div>
+                                    <div>{payroll.payment_date || "-"}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">Para Birimi</div>
+                                    <div>{payroll.currency || "TRY"}</div>
+                                </div>
                             </div>
 
-                            {/* SAĞ: Decrypted payload */}
-                            <div className="bg-white rounded-xl border p-4 space-y-3 lg:col-span-1">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <div className="text-xs text-slate-500">
-                                            Decrypted Payload
-                                        </div>
-                                        <div className="font-semibold">
-                                            Bordro içeriği
-                                        </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <div className="text-slate-500 text-xs">Brüt Ücret</div>
+                                    <div>{payroll.gross_salary}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">Net Ücret</div>
+                                    <div>{payroll.net_salary}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">Bonus / Prim</div>
+                                    <div>{payroll.bonus ?? "-"}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">Toplam Kesinti</div>
+                                    <div>{payroll.deductions_total ?? "-"}</div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mt-2">
+                                <div>
+                                    <div className="text-slate-500 text-xs">
+                                        İmzalayan (Ad Soyad)
                                     </div>
+                                    <div>{payroll.employer_sign_name || "-"}</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs">
+                                        İmzalayan Ünvan
+                                    </div>
+                                    <div>{payroll.employer_sign_title || "-"}</div>
+                                </div>
+                            </div>
+
+                            <div className="mt-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="font-medium text-sm">
+                                        Şifrelenmiş Payload
+                                    </span>
                                     <button
                                         onClick={handleDecrypt}
-                                        disabled={decryptState.loading}
-                                        className="px-3 py-1 text-xs rounded bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-60"
+                                        className="text-xs px-3 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
                                     >
-                                        {decryptState.loading
-                                            ? "Çözümleniyor..."
-                                            : "Decrypt"}
+                                        Decrypt Et
                                     </button>
                                 </div>
-
-                                {decryptState.error && (
-                                    <div className="text-xs text-red-600 bg-red-50 border border-red-100 px-2 py-1 rounded">
-                                        {decryptState.error}
-                                    </div>
-                                )}
-
-                                {decryptState.payload ? (
-                                    <div className="text-xs space-y-1">
-                                        {"period_start" in
-                                            decryptState.payload && (
-                                                <div>
-                                                    <span className="font-medium">
-                                                        Period Start:{" "}
-                                                    </span>
-                                                    {
-                                                        decryptState.payload
-                                                            .period_start
-                                                    }
-                                                </div>
-                                            )}
-                                        {"period_end" in
-                                            decryptState.payload && (
-                                                <div>
-                                                    <span className="font-medium">
-                                                        Period End:{" "}
-                                                    </span>
-                                                    {
-                                                        decryptState.payload
-                                                            .period_end
-                                                    }
-                                                </div>
-                                            )}
-                                        {"gross_salary" in
-                                            decryptState.payload && (
-                                                <div>
-                                                    <span className="font-medium">
-                                                        Gross Salary:{" "}
-                                                    </span>
-                                                    {
-                                                        decryptState.payload
-                                                            .gross_salary
-                                                    }
-                                                </div>
-                                            )}
-                                        {"net_salary" in
-                                            decryptState.payload && (
-                                                <div>
-                                                    <span className="font-medium">
-                                                        Net Salary:{" "}
-                                                    </span>
-                                                    {
-                                                        decryptState.payload
-                                                            .net_salary
-                                                    }
-                                                </div>
-                                            )}
-
-                                        <details className="mt-2">
-                                            <summary className="cursor-pointer text-slate-600">
-                                                Tüm JSON&apos;u göster
-                                            </summary>
-                                            <pre className="mt-1 p-2 bg-slate-100 rounded text-[11px] overflow-auto max-h-64">
-                                                {JSON.stringify(
-                                                    decryptState.payload,
-                                                    null,
-                                                    2
-                                                )}
-                                            </pre>
-                                        </details>
-                                    </div>
-                                ) : !decryptState.loading ? (
-                                    <div className="text-xs text-slate-400">
-                                        Henüz çözülmedi. Decrypt butonuna bas.
-                                    </div>
-                                ) : null}
+                                <p className="text-xs text-slate-500">
+                                    Bu bordro içeriği zincire şifreli olarak yazılmıştır. Decrypt
+                                    ederek düz metin halini görebilirsin (sadece şirket sahibi).
+                                </p>
                             </div>
                         </div>
-                    )}
+                    </div>
                 </main>
             </div>
+
+            {/* Decrypt Modal */}
+            {decryptModal.open && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                    <div className="bg-white rounded-lg shadow-lg w-full max-w-lg p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h2 className="font-semibold text-lg">
+                                Decrypted Payroll #{payroll.id}
+                            </h2>
+                            <button
+                                onClick={closeDecryptModal}
+                                className="text-sm text-slate-500 hover:text-slate-700"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {decryptModal.loading && (
+                            <div className="text-sm text-slate-500">
+                                Çözümleniyor...
+                            </div>
+                        )}
+
+                        {decryptModal.error && (
+                            <div className="text-sm text-red-600">
+                                {decryptModal.error}
+                            </div>
+                        )}
+
+                        {!decryptModal.loading &&
+                            !decryptModal.error &&
+                            decryptModal.payload && (
+                                <div className="space-y-2 text-sm">
+                                    {"period_start" in decryptModal.payload && (
+                                        <div>
+                                            <span className="font-medium">
+                                                Period Start:{" "}
+                                            </span>
+                                            {decryptModal.payload.period_start}
+                                        </div>
+                                    )}
+
+                                    {"period_end" in decryptModal.payload && (
+                                        <div>
+                                            <span className="font-medium">
+                                                Period End:{" "}
+                                            </span>
+                                            {decryptModal.payload.period_end}
+                                        </div>
+                                    )}
+
+                                    {"gross_salary" in decryptModal.payload && (
+                                        <div>
+                                            <span className="font-medium">
+                                                Gross Salary:{" "}
+                                            </span>
+                                            {decryptModal.payload.gross_salary}
+                                        </div>
+                                    )}
+
+                                    {"net_salary" in decryptModal.payload && (
+                                        <div>
+                                            <span className="font-medium">
+                                                Net Salary:{" "}
+                                            </span>
+                                            {decryptModal.payload.net_salary}
+                                        </div>
+                                    )}
+
+                                    <details className="mt-2">
+                                        <summary className="cursor-pointer text-slate-600">
+                                            Tüm payload (JSON)
+                                        </summary>
+                                        <pre className="mt-1 p-2 bg-slate-100 rounded text-xs overflow-auto">
+                                            {JSON.stringify(
+                                                decryptModal.payload,
+                                                null,
+                                                2
+                                            )}
+                                        </pre>
+                                    </details>
+                                </div>
+                            )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

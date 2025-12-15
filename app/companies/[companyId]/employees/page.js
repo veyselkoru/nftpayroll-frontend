@@ -43,8 +43,18 @@ export default function EmployeesPage() {
             .finally(() => setLoading(false));
     }, [companyId, router]);
 
-    const handleChange = (e) =>
-        setForm({ ...form, [e.target.name]: e.target.value });
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+
+        if (name === "tc_no") {
+            const digits = value.replace(/\D/g, "").slice(0, 11); // TR kimlik max 11
+            setForm((prev) => ({ ...prev, [name]: digits }));
+            return;
+        }
+
+        setForm((prev) => ({ ...prev, [name]: value }));
+    };
+
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -152,13 +162,14 @@ export default function EmployeesPage() {
                                     <div className="space-y-1">
                                         <label className="text-slate-600">TC Kimlik No</label>
                                         <input
+                                            type="text"
                                             name="tc_no"
                                             value={form.tc_no}
                                             onChange={handleChange}
-                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                            placeholder="11 haneli"
                                             maxLength={11}
+                                            className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
                                         />
+
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-slate-600">İşe Başlama Tarihi</label>
