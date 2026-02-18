@@ -1,0 +1,680 @@
+openapi: 3.0.3
+info:
+  title: NFTPayroll API (Inferred from Frontend)
+  version: 0.1.0
+  description: |
+    This OpenAPI spec was generated from frontend API usage in `lib/*.js`.
+    Some response schemas are intentionally flexible (`type: object`) where backend contracts are not explicit in this repository.
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local Laravel API
+
+tags:
+  - name: Auth
+  - name: Dashboard
+  - name: Companies
+  - name: Employees
+  - name: Payrolls
+  - name: NFTs
+
+paths:
+  /login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /register:
+    post:
+      tags: [Auth]
+      summary: Register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Successful registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User info
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout response
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard summary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Summary object
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /dashboard/recent-mints:
+    get:
+      tags: [Dashboard]
+      summary: Recent mint activities
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Recent mint list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies:
+    get:
+      tags: [Companies]
+      summary: List companies
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Companies list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Company'
+                  - type: object
+    post:
+      tags: [Companies]
+      summary: Create company
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompanyCreateRequest'
+      responses:
+        '201':
+          description: Company created
+          content:
+            application/json:
+              schema:
+                type: object
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /companies/{companyId}:
+    get:
+      tags: [Companies]
+      summary: Company detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+      responses:
+        '200':
+          description: Company detail
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /companies/{companyId}/nfts:
+    get:
+      tags: [NFTs]
+      summary: List company NFTs
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+      responses:
+        '200':
+          description: NFT list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/employees:
+    get:
+      tags: [Employees]
+      summary: List employees for company
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+      responses:
+        '200':
+          description: Employee list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Employee'
+                  - type: object
+    post:
+      tags: [Employees]
+      summary: Create employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeCreateRequest'
+      responses:
+        '201':
+          description: Employee created
+          content:
+            application/json:
+              schema:
+                type: object
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /companies/{companyId}/employees/{employeeId}/nfts:
+    get:
+      tags: [NFTs]
+      summary: List employee NFTs
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+      responses:
+        '200':
+          description: NFT list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/employees/{employeeId}/payrolls:
+    get:
+      tags: [Payrolls]
+      summary: List payrolls
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+      responses:
+        '200':
+          description: Payroll list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Payroll'
+                  - type: object
+    post:
+      tags: [Payrolls]
+      summary: Create payroll
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayrollCreateRequest'
+      responses:
+        '201':
+          description: Payroll created
+          content:
+            application/json:
+              schema:
+                type: object
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /companies/{companyId}/employees/{employeeId}/payrolls/bulk:
+    post:
+      tags: [Payrolls]
+      summary: Bulk create payrolls for a single employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCreatePayrollRequest'
+      responses:
+        '200':
+          description: Bulk result
+          content:
+            application/json:
+              schema:
+                type: object
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /companies/{companyId}/employees/{employeeId}/payrolls/{payrollId}:
+    get:
+      tags: [Payrolls]
+      summary: Payroll detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+        - $ref: '#/components/parameters/payrollId'
+      responses:
+        '200':
+          description: Payroll detail
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /companies/{companyId}/employees/{employeeId}/payrolls/{payrollId}/queue:
+    post:
+      tags: [Payrolls]
+      summary: Queue payroll for minting
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+        - $ref: '#/components/parameters/payrollId'
+      responses:
+        '200':
+          description: Queue response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/employees/{employeeId}/payrolls/{payrollId}/status:
+    get:
+      tags: [Payrolls]
+      summary: Payroll mint status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+        - $ref: '#/components/parameters/payrollId'
+      responses:
+        '200':
+          description: Status response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/employees/{employeeId}/payrolls/{payrollId}/mint/retry:
+    post:
+      tags: [Payrolls]
+      summary: Retry mint
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+        - $ref: '#/components/parameters/payrollId'
+      responses:
+        '200':
+          description: Retry response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/employees/{employeeId}/payrolls/{payrollId}/decrypt:
+    get:
+      tags: [Payrolls]
+      summary: Decrypt payroll payload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+        - $ref: '#/components/parameters/employeeId'
+        - $ref: '#/components/parameters/payrollId'
+      responses:
+        '200':
+          description: Decrypted payload response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /companies/{companyId}/payrolls/bulk:
+    post:
+      tags: [Payrolls]
+      summary: Bulk create payrolls at company level
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/companyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkCreateCompanyPayrollRequest'
+      responses:
+        '200':
+          description: Bulk result
+          content:
+            application/json:
+              schema:
+                type: object
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    companyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: integer
+    employeeId:
+      name: employeeId
+      in: path
+      required: true
+      schema:
+        type: integer
+    payrollId:
+      name: payrollId
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties: true
+
+    AuthTokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+      additionalProperties: true
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RegisterRequest:
+      type: object
+      additionalProperties: true
+
+    Company:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      additionalProperties: true
+
+    CompanyCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          nullable: true
+        tax_number:
+          type: string
+          nullable: true
+        registration_number:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        contact_phone:
+          type: string
+          nullable: true
+        contact_email:
+          type: string
+          format: email
+          nullable: true
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        employee_code:
+          type: string
+          nullable: true
+      additionalProperties: true
+
+    EmployeeCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        employee_code:
+          type: string
+          nullable: true
+        name:
+          type: string
+        surname:
+          type: string
+          nullable: true
+        tc_no:
+          type: string
+          nullable: true
+        position:
+          type: string
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        wallet_address:
+          type: string
+          nullable: true
+
+    Payroll:
+      type: object
+      properties:
+        id:
+          type: integer
+        company_id:
+          type: integer
+        employee_id:
+          type: integer
+        status:
+          type: string
+      additionalProperties: true
+
+    PayrollCreateRequest:
+      type: object
+      required: [period_start, period_end, currency, gross_salary, net_salary]
+      properties:
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+        payment_date:
+          type: string
+          format: date
+          nullable: true
+        currency:
+          type: string
+        gross_salary:
+          type: number
+        net_salary:
+          type: number
+        bonus:
+          type: number
+          nullable: true
+        deductions_total:
+          type: number
+          nullable: true
+        employer_sign_name:
+          type: string
+          nullable: true
+        employer_sign_title:
+          type: string
+          nullable: true
+        batch_id:
+          type: string
+          nullable: true
+        external_batch_ref:
+          type: string
+          nullable: true
+        external_ref:
+          type: string
+          nullable: true
+
+    BulkCreatePayrollRequest:
+      type: object
+      required: [items]
+      properties:
+        payroll_group_id:
+          oneOf:
+            - type: string
+            - type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayrollCreateRequest'
+
+    BulkCreateCompanyPayrollRequest:
+      type: object
+      required: [items]
+      properties:
+        payroll_group_id:
+          oneOf:
+            - type: string
+            - type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true

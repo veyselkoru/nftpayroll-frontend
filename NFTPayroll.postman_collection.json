@@ -1,0 +1,191 @@
+{
+  "info": {
+    "name": "NFTPayroll API",
+    "_postman_id": "6d4db85b-3fd8-4cbf-8dcb-6b77f2a5e2ad",
+    "description": "Auth, legacy payroll endpoints and new admin modules endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Owner User\",\n  \"email\": \"owner@example.com\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{base_url}}/api/register"
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.token) pm.environment.set('token', json.token);",
+                  "  if (json.user && json.user.api_prefix) pm.environment.set('api_prefix', json.user.api_prefix);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{base_url}}/api/login"
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/api/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{base_url}}/api/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Operations Center",
+      "item": [
+        { "name": "List Jobs", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/operations/jobs?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Retry Job", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/operations/jobs/{{job_id}}/retry" } },
+        { "name": "Cancel Job", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/operations/jobs/{{job_id}}/cancel" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/operations/metrics" } }
+      ]
+    },
+    {
+      "name": "Approvals",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/approvals?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Approve", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/approvals/{{approval_id}}/approve" } },
+        { "name": "Reject", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Not compliant\"\n}" }, "url": "{{base_url}}/api/approvals/{{approval_id}}/reject" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/approvals/metrics" } }
+      ]
+    },
+    {
+      "name": "Compliance",
+      "item": [
+        { "name": "Audit Logs", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/compliance/audit-logs?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Security Events", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/compliance/security-events?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Export History", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/compliance/export-history?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/notifications?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Read", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/notifications/{{notification_id}}/read" } },
+        { "name": "Read All", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/notifications/read-all" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/notifications/metrics" } }
+      ]
+    },
+    {
+      "name": "Integrations",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/integrations?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"SAP Prod\",\n  \"provider\": \"sap\",\n  \"status\": \"active\",\n  \"config\": {\n    \"endpoint\": \"https://sap.example.com\"\n  }\n}" }, "url": "{{base_url}}/api/integrations" } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"inactive\"\n}" }, "url": "{{base_url}}/api/integrations/{{integration_id}}" } },
+        { "name": "Test", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/integrations/{{integration_id}}/test" } },
+        { "name": "Webhook Logs", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/integrations/webhooks/logs?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } }
+      ]
+    },
+    {
+      "name": "Templates",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/templates?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Payroll Email\",\n  \"type\": \"email\",\n  \"body\": \"Hello...\",\n  \"status\": \"draft\"\n}" }, "url": "{{base_url}}/api/templates" } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Payroll Email v2\"\n}" }, "url": "{{base_url}}/api/templates/{{template_id}}" } },
+        { "name": "Publish", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/templates/{{template_id}}/publish" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/templates/metrics" } }
+      ]
+    },
+    {
+      "name": "Wallets",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/wallets?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Validate", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"wallet_address\": \"0x1111111111111111111111111111111111111111\",\n  \"network\": \"sepolia\"\n}" }, "url": "{{base_url}}/api/wallets/validate" } },
+        { "name": "Bulk Validate", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"items\": [\n    {\n      \"wallet_address\": \"0x1111111111111111111111111111111111111111\",\n      \"network\": \"sepolia\"\n    },\n    {\n      \"wallet_address\": \"0x2222222222222222222222222222222222222222\",\n      \"network\": \"ethereum\"\n    }\n  ]\n}" }, "url": "{{base_url}}/api/wallets/bulk-validate" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/wallets/metrics" } }
+      ]
+    },
+    {
+      "name": "Bulk Operations",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/bulk-operations?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Import", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Payroll Batch Jan\",\n  \"type\": \"payroll_import\",\n  \"total_items\": 120,\n  \"payload\": {\n    \"source\": \"csv\"\n  }\n}" }, "url": "{{base_url}}/api/bulk-operations/import" } },
+        { "name": "Retry", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/bulk-operations/{{bulk_operation_id}}/retry" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/bulk-operations/metrics" } }
+      ]
+    },
+    {
+      "name": "Cost Reports",
+      "item": [
+        { "name": "Summary", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/cost-reports/summary?from=&to=" } },
+        { "name": "By Company", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/cost-reports/by-company" } },
+        { "name": "By Network", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/cost-reports/by-network" } }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/roles?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Compliance Officer\",\n  \"key\": \"compliance_officer\",\n  \"status\": \"active\",\n  \"permissions\": [\"compliance.view\"]\n}" }, "url": "{{base_url}}/api/roles" } },
+        { "name": "Update", "request": { "method": "PUT", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"status\": \"inactive\"\n}" }, "url": "{{base_url}}/api/roles/{{role_id}}" } },
+        { "name": "Assign Users", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"user_ids\": [1,2]\n}" }, "url": "{{base_url}}/api/roles/{{role_id}}/assign-users" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/roles/metrics" } }
+      ]
+    },
+    {
+      "name": "Exports",
+      "item": [
+        { "name": "List", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/exports?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Create", "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" },{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Monthly Export\",\n  \"type\": \"csv\",\n  \"filters\": {\n    \"from\": \"2026-01-01\",\n    \"to\": \"2026-01-31\"\n  }\n}" }, "url": "{{base_url}}/api/exports" } },
+        { "name": "Download", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/exports/{{export_id}}/download" } },
+        { "name": "Metrics", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/exports/metrics" } }
+      ]
+    },
+    {
+      "name": "System Health",
+      "item": [
+        { "name": "Overview", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/system-health/overview" } },
+        { "name": "Services", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/system-health/services?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } },
+        { "name": "Incidents", "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }], "url": "{{base_url}}/api/system-health/incidents?search=&status=&from=&to=&sort_by=created_at&sort_dir=desc&per_page=15" } }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "token", "value": "" },
+    { "key": "api_prefix", "value": "/api" },
+    { "key": "job_id", "value": "1" },
+    { "key": "approval_id", "value": "1" },
+    { "key": "notification_id", "value": "1" },
+    { "key": "integration_id", "value": "1" },
+    { "key": "template_id", "value": "1" },
+    { "key": "bulk_operation_id", "value": "1" },
+    { "key": "role_id", "value": "1" },
+    { "key": "export_id", "value": "1" }
+  ]
+}

@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
 import { useAuthGuard } from "@/app/components/layout/useAuthGuard";
-import { bulkCreatePayrollsApi } from "@/lib/payrolls";
-import { useToast } from "@/app/components/ToastProvider";
-import ImportPreviewModal from "@/app/components/ImportPreviewModal";
-
+import DataTable from "@/app/components/DataTable";
 import {
+    bulkCreatePayrollsApi,
     fetchPayrolls,
     createPayrollApi,
     queuePayrollApi,
@@ -17,6 +15,20 @@ import {
     retryMintApi,
     decryptPayrollApi
 } from "@/lib/payrolls";
+import { useToast } from "@/app/components/ToastProvider";
+import ImportPreviewModal from "@/app/components/ImportPreviewModal";
+import Select2 from "@/app/components/Select2";
+import DatePicker from "@/app/components/DatePicker";
+import { formatDateDDMMYYYY } from "@/lib/date";
+import { fetchEmployees } from "@/lib/employees";
+import { fetchCompanies } from "@/lib/companies";
+import { Eye, Plus, Upload, Clock3, RotateCcw, Shield, FileLock2 } from "lucide-react";
+
+const currencyOptions = [
+    { value: "TRY", label: "TRY" },
+    { value: "USD", label: "USD" },
+    { value: "EUR", label: "EUR" },
+];
 
 export default function PayrollsPage() {
     const ready = useAuthGuard();
@@ -35,13 +47,19 @@ export default function PayrollsPage() {
     const [bulkStats, setBulkStats] = useState(null);
     const [dragActive, setDragActive] = useState(false);
     const [bulkProgress, setBulkProgress] = useState(null);
-    const [bulkFailedItems, setBulkFailedItems] = useState([]);
-    const [showFailedDetails, setShowFailedDetails] = useState(false);
     const [importPreview, setImportPreview] = useState(null);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [groupFilter, setGroupFilter] = useState("all");
-    const [page, setPage] = useState(1);
-    const pageSize = 20;
+    const [showJsonImportModal, setShowJsonImportModal] = useState(false);
+    const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+    const [companies, setCompanies] = useState([]);
+    const [employees, setEmployees] = useState([]);
+    const [filters, setFilters] = useState({
+        companyId: String(companyId),
+        employeeId: String(employeeId),
+        status: "all",
+        from: "",
+        to: "",
+    });
 
 
 
@@ -104,41 +122,6 @@ export default function PayrollsPage() {
     });
 
 
-    // Group ID seçenekleri (dropdownda göstereceğiz)
-    const groupOptions = Array.from(
-        new Set(
-            (payrolls || [])
-                .map((p) => p.payroll_group_id)
-                .filter(Boolean)
-        )
-    );
-
-    // Filtrelenmiş liste
-    const filteredPayrolls = (payrolls || []).filter((p) => {
-        if (!groupFilter || groupFilter === "all") return true;
-        if (groupFilter === "none") return !p.payroll_group_id;
-        return p.payroll_group_id === groupFilter;
-    });
-
-    // Sayfalama hesapları
-    const totalPages = Math.max(
-        1,
-        Math.ceil(filteredPayrolls.length / pageSize)
-    );
-    const currentPage = Math.min(page, totalPages);
-    const startIndex = (currentPage - 1) * pageSize;
-    const pageItems = filteredPayrolls.slice(
-        startIndex,
-        startIndex + pageSize
-    );
-
-    // Filtre değiştiğinde / liste boyu değiştiğinde sayfayı 1'e çek
-    useEffect(() => {
-        setPage(1);
-    }, [groupFilter, payrolls.length]);
-
-
-
     // ---- Payrolls Fetch ----
     useEffect(() => {
         if (!ready) return;
@@ -148,7 +131,6 @@ export default function PayrollsPage() {
                 setLoading(true);
                 const data = await fetchPayrolls(companyId, employeeId);
                 const list = Array.isArray(data) ? data : data.data || [];
-                console.log(list)
                 setPayrolls(list);
             } catch (err) {
                 setError(err.message);
@@ -159,6 +141,32 @@ export default function PayrollsPage() {
 
         load();
     }, [ready, companyId, employeeId]);
+
+    useEffect(() => {
+        setFilters((prev) => ({ ...prev, companyId: String(companyId), employeeId: String(employeeId) }));
+    }, [companyId, employeeId]);
+
+    useEffect(() => {
+        if (!ready) return;
+        fetchEmployees(companyId)
+            .then((resp) => {
+                const list = Array.isArray(resp) ? resp : resp?.data || [];
+                setEmployees(list);
+            })
+            .catch(() => {
+                setEmployees([]);
+            });
+    }, [ready, companyId]);
+
+    useEffect(() => {
+        if (!ready) return;
+        fetchCompanies()
+            .then((resp) => {
+                const list = Array.isArray(resp) ? resp : resp?.data || [];
+                setCompanies(list);
+            })
+            .catch(() => setCompanies([]));
+    }, [ready]);
 
     useEffect(() => {
         if (!ready) return;
@@ -323,6 +331,7 @@ export default function PayrollsPage() {
         const file = e.target.files?.[0];
         if (!file) return;
         await importPayrollsFromJsonFile(file);
+        setShowJsonImportModal(false);
         // aynı input’la tekrar seçebilmek için
         e.target.value = "";
     };
@@ -336,6 +345,7 @@ export default function PayrollsPage() {
         if (!file) return;
 
         await importPayrollsFromJsonFile(file);
+        setShowJsonImportModal(false);
     };
 
     const handleDropzoneDragOver = (e) => {
@@ -461,8 +471,9 @@ export default function PayrollsPage() {
     // ---- Create Payroll ----
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!form.period_start || !form.period_end) return;
+        if (!form.period_start || !form.period_end) return false;
 
+        setCreating(true);
         setError("");
         try {
             const payload = {
@@ -498,9 +509,13 @@ export default function PayrollsPage() {
                 employer_sign_name: "",
                 employer_sign_title: "",
             });
+            return true;
         } catch (err) {
             console.error(err);
             setError(err.message || "Kayıt sırasında hata oluştu.");
+            return false;
+        } finally {
+            setCreating(false);
         }
     };
 
@@ -521,7 +536,6 @@ export default function PayrollsPage() {
     const refreshPayrolls = async () => {
         const data = await fetchPayrolls(companyId, employeeId);
         const list = data.data || data;
-
         setPayrolls(list);
 
         // 🔹 Auto refresh'e karar ver:
@@ -628,7 +642,7 @@ export default function PayrollsPage() {
                 bonus: 500,
                 deductions_total: 200,
                 employer_sign_name:
-                    form.employer_sign_name || "Şirket Yetkilisi",
+                    form.employer_sign_name || "Firma Yetkilisi",
                 employer_sign_title:
                     form.employer_sign_title || "İK Müdürü",
                 batch_id: "2025-01",
@@ -727,6 +741,164 @@ export default function PayrollsPage() {
         showToast(msg, failed ? "warning" : "success");
     };
 
+    const employeeOptions = useMemo(() => {
+        const opts = (employees || []).map((emp) => ({
+            value: String(emp.id),
+            label: [emp.name, emp.surname].filter(Boolean).join(" ") || `Çalışan #${emp.id}`,
+        }));
+        return opts;
+    }, [employees]);
+
+    const companyOptions = useMemo(() => {
+        return (companies || []).map((company) => ({
+            value: String(company.id),
+            label: company.name || `Firma #${company.id}`,
+        }));
+    }, [companies]);
+
+    const statusOptions = useMemo(() => {
+        const statuses = Array.from(new Set((payrolls || []).map((p) => p.status).filter(Boolean)));
+        const mapped = statuses.map((status) => ({ value: status, label: status }));
+        return [{ value: "all", label: "Tüm Durumlar" }, ...mapped];
+    }, [payrolls]);
+
+    const filteredPayrolls = useMemo(() => {
+        return (payrolls || []).filter((p) => {
+            if (filters.status !== "all" && p.status !== filters.status) return false;
+            if (filters.from && p.period_start && p.period_start < filters.from) return false;
+            if (filters.to && p.period_end && p.period_end > filters.to) return false;
+            return true;
+        });
+    }, [payrolls, filters.status, filters.from, filters.to]);
+
+    const payrollColumns = [
+        {
+            key: "serial",
+            header: "#",
+            sortable: false,
+            render: (_row, _rowIndex, serial) => <span className="text-xs text-slate-500">{serial}</span>,
+        },
+        {
+            key: "period",
+            header: "Dönem",
+            accessor: (row) => `${row.period_start || ""}-${row.period_end || ""}`,
+            render: (row) => (
+                <span className="text-xs">
+                    {formatDateDDMMYYYY(row.period_start)} - {formatDateDDMMYYYY(row.period_end)}
+                </span>
+            ),
+        },
+        {
+            key: "payment_date",
+            header: "Ödeme",
+            render: (row) => <span className="text-xs">{formatDateDDMMYYYY(row.payment_date)}</span>,
+        },
+        {
+            key: "net_salary",
+            header: "Net",
+            render: (row) => (
+                <span className="text-xs font-medium">
+                    {row.net_salary ?? "-"} {row.currency || ""}
+                </span>
+            ),
+        },
+        {
+            key: "nft",
+            header: "NFT",
+            sortable: false,
+            render: (row) => {
+                const nft = row.nft;
+                if (!nft) return <span className="text-xs text-slate-400">Yok</span>;
+                return (
+                    <div className="flex items-center gap-2 text-xs">
+                        <span className="font-medium">#{nft.token_id || "-"}</span>
+                        {nft.ipfs_cid ? (
+                            <a
+                                href={`https://ipfs.io/ipfs/${nft.ipfs_cid}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="IPFS"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-blue-600 hover:underline"
+                            >
+                                IPFS
+                            </a>
+                        ) : null}
+                    </div>
+                );
+            },
+        },
+        {
+            key: "status",
+            header: "Durum",
+            render: (row) => badge(row.status),
+        },
+        {
+            key: "actions",
+            header: "Aksiyon",
+            sortable: false,
+            render: (row) => (
+                <div className="flex items-center gap-1">
+                    <button
+                        type="button"
+                        title="Detay"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/companies/${companyId}/employees/${employeeId}/payrolls/${row.id}`);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100"
+                    >
+                        <Eye className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        title="Queue"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleQueueMint(row.id);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-blue-200 bg-blue-50 p-1.5 text-blue-700 hover:bg-blue-100"
+                    >
+                        <Clock3 className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        title="Durum Kontrol"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleStatus(row.id);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-100"
+                    >
+                        <Shield className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        title="Retry Mint"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleRetry(row.id);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-red-200 bg-red-50 p-1.5 text-red-700 hover:bg-red-100"
+                    >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                        type="button"
+                        title="Decrypt"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDecrypt(row.id);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md border border-violet-200 bg-violet-50 p-1.5 text-violet-700 hover:bg-violet-100"
+                    >
+                        <FileLock2 className="h-3.5 w-3.5" />
+                    </button>
+                </div>
+            ),
+        },
+    ];
+
 
     // ---- Render (guard) ----
     if (!ready) {
@@ -738,13 +910,33 @@ export default function PayrollsPage() {
     }
 
     return (
-        <div className="min-h-screen flex bg-slate-100">
+        <div className="min-h-screen flex ta-shell">
             <Sidebar />
             <div className="flex-1 flex flex-col">
                 <Navbar />
 
-                <main className="p-6 space-y-6">
-                    <h1 className="text-xl font-semibold">Payrolls</h1>
+                <main className="ta-page space-y-6">
+                    <div className="flex items-center justify-between gap-3">
+                        <h1 className="text-xl font-semibold">Bordrolar</h1>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowJsonImportModal(true)}
+                                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                            >
+                                <Upload className="h-4 w-4" />
+                                Toplu JSON Import
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCreateModalOpen(true)}
+                                className="inline-flex items-center gap-2 rounded-lg bg-[#111b3a] px-4 py-2 text-sm font-medium text-white hover:bg-[#0d1630]"
+                            >
+                                <Plus className="h-4 w-4" />
+                                Yeni Bordro Oluştur
+                            </button>
+                        </div>
+                    </div>
 
                     {error && (
                         <div className="bg-red-100 border border-red-300 text-red-700 px-4 py-2 rounded">
@@ -752,142 +944,240 @@ export default function PayrollsPage() {
                         </div>
                     )}
 
-                    {/* ----- CREATE ----- */}
-                    <div className="bg-white p-4 rounded shadow border space-y-3">
-                        <h2 className="font-semibold text-lg">Yeni Payroll Oluştur</h2>
-                        <div className="flex flex-col lg:flex-row gap-4 items-start">
-                            {/* Sol: normal form */}
-                            <div className="flex-1 w-full">
-                                <form onSubmit={handleSubmit} className="space-y-3">
+                    <section className="ta-card p-4">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Firma Filtresi</label>
+                                <Select2
+                                    name="companyFilter"
+                                    value={filters.companyId}
+                                    onChange={async (e) => {
+                                        const nextCompanyId = e.target.value;
+                                        setFilters((prev) => ({ ...prev, companyId: nextCompanyId }));
+                                        try {
+                                            const resp = await fetchEmployees(nextCompanyId);
+                                            const list = Array.isArray(resp) ? resp : resp?.data || [];
+                                            const targetEmployeeId =
+                                                list.find((emp) => String(emp.id) === String(filters.employeeId))?.id ||
+                                                list[0]?.id;
+                                            if (targetEmployeeId) {
+                                                router.push(
+                                                    `/companies/${nextCompanyId}/employees/${targetEmployeeId}/payrolls`
+                                                );
+                                                return;
+                                            }
+                                            router.push(`/companies/${nextCompanyId}/employees`);
+                                        } catch {
+                                            router.push(`/companies/${nextCompanyId}/employees`);
+                                        }
+                                    }}
+                                    options={companyOptions}
+                                    isSearchable
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Çalışan Filtresi</label>
+                                <Select2
+                                    name="employeeFilter"
+                                    value={filters.employeeId}
+                                    onChange={(e) => {
+                                        const nextEmployeeId = e.target.value;
+                                        setFilters((prev) => ({ ...prev, employeeId: nextEmployeeId }));
+                                        router.push(`/companies/${companyId}/employees/${nextEmployeeId}/payrolls`);
+                                    }}
+                                    options={employeeOptions}
+                                    isSearchable
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Başlangıç Tarihi</label>
+                                <DatePicker
+                                    name="from"
+                                    value={filters.from}
+                                    onChange={(e) => setFilters((prev) => ({ ...prev, from: e.target.value }))}
+                                    placeholder="Başlangıç"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Bitiş Tarihi</label>
+                                <DatePicker
+                                    name="to"
+                                    value={filters.to}
+                                    onChange={(e) => setFilters((prev) => ({ ...prev, to: e.target.value }))}
+                                    placeholder="Bitiş"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Status</label>
+                                <Select2
+                                    name="status"
+                                    value={filters.status}
+                                    onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
+                                    options={statusOptions}
+                                />
+                            </div>
+                        </div>
+                    </section>
+
+                    {bulkProgress ? (
+                        <div className="ta-card p-3 text-xs text-slate-600">
+                            Toplu JSON: {bulkProgress.processed}/{bulkProgress.total}
+                        </div>
+                    ) : null}
+                    {bulkError ? <div className="text-xs text-red-600">{bulkError}</div> : null}
+                    {bulkStats && !bulkLoading ? (
+                        <div className="text-xs text-emerald-600">
+                            Toplam {bulkStats.total} kaydın {bulkStats.imported} tanesi eklendi
+                            {bulkStats.failed > 0 ? `, ${bulkStats.failed} tanesi hatalı.` : "."}
+                        </div>
+                    ) : null}
+
+                    {loading ? (
+                        <div className="ta-card p-6 text-sm text-slate-500">Yükleniyor...</div>
+                    ) : (
+                        <DataTable
+                            columns={payrollColumns}
+                            rows={filteredPayrolls}
+                            rowKey={(row) => row.id}
+                            emptyText="Bordro kaydı bulunamadı."
+                            defaultPageSize={10}
+                            enableSearch
+                            searchPlaceholder="Dönem, status, tutar ara..."
+                            searchableKeys={["id", "status", "period_start", "period_end", "net_salary", "gross_salary"]}
+                            onRowClick={(row) =>
+                                router.push(`/companies/${companyId}/employees/${employeeId}/payrolls/${row.id}`)
+                            }
+                        />
+                    )}
+
+                    {isCreateModalOpen ? (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                            <div
+                                className="absolute inset-0 bg-slate-900/50"
+                                onClick={() => {
+                                    if (!creating) setCreateModalOpen(false);
+                                }}
+                            />
+                            <div className="relative w-full max-w-4xl ta-card p-5">
+                                <div className="mb-4 flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold">Yeni Bordro Oluştur</h2>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (!creating) setCreateModalOpen(false);
+                                        }}
+                                        className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                <form
+                                    onSubmit={async (e) => {
+                                        const ok = await handleSubmit(e);
+                                        if (ok) setCreateModalOpen(false);
+                                    }}
+                                    className="space-y-3"
+                                >
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                         <div className="space-y-1">
                                             <label className="text-slate-600">Dönem Başlangıç</label>
-                                            <input
-                                                type="date"
+                                            <DatePicker
                                                 name="period_start"
                                                 value={form.period_start}
                                                 onChange={handleChange}
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                                placeholder="Dönem başlangıç"
                                                 required
                                             />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-slate-600">Dönem Bitiş</label>
-                                            <input
-                                                type="date"
+                                            <DatePicker
                                                 name="period_end"
                                                 value={form.period_end}
                                                 onChange={handleChange}
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                                placeholder="Dönem bitiş"
                                                 required
                                             />
                                         </div>
                                         <div className="space-y-1">
                                             <label className="text-slate-600">Ödeme Tarihi</label>
-                                            <input
-                                                type="date"
+                                            <DatePicker
                                                 name="payment_date"
                                                 value={form.payment_date}
                                                 onChange={handleChange}
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                                placeholder="Ödeme tarihi"
                                             />
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                         <div className="space-y-1">
-                                            <div className="w-full flex gap-3 text-sm">
-                                                <div className="space-y-1 w-auto w-[30%]">
-                                                    <label className="text-slate-600">Para Birimi</label>
-                                                    <select
-                                                        name="currency"
-                                                        value={form.currency}
-                                                        onChange={handleChange}
-                                                        className="w-full h-[34px] border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                                    >
-                                                        <option value="TRY">TRY</option>
-                                                        <option value="USD">USD</option>
-                                                        <option value="EUR">EUR</option>
-                                                    </select>
-                                                </div>
-
-
-                                                <div className="space-y-1 flex-1">
-                                                    <label className="text-slate-600">Brüt Ücret</label>
-                                                    <input
-                                                        type="text"
-                                                        name="gross_salary"
-                                                        value={form.gross_salary}
-                                                        onChange={handleChange}
-                                                        onBlur={(e) =>
-                                                            setForm((prev) => ({
-                                                                ...prev,
-                                                                gross_salary: formatCurrencyTR(e.target.value),
-                                                            }))
-                                                        }
-                                                        className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                                        required
-                                                    />
-
-
-                                                </div>
-                                            </div>
+                                            <label className="text-slate-600">Para Birimi</label>
+                                            <Select2
+                                                name="currency"
+                                                value={form.currency}
+                                                onChange={handleChange}
+                                                options={currencyOptions}
+                                                placeholder="Para birimi"
+                                            />
                                         </div>
-
                                         <div className="space-y-1">
-                                            <label className="text-slate-600">Net Ücret</label>
+                                            <label className="text-slate-600">Brüt Ücret</label>
                                             <input
                                                 type="text"
-                                                step="0.01"
-                                                name="net_salary"
-                                                value={form.net_salary}
+                                                name="gross_salary"
+                                                value={form.gross_salary}
                                                 onChange={handleChange}
                                                 onBlur={(e) =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        net_salary: formatCurrencyTR(e.target.value),
-                                                    }))
+                                                    setForm((prev) => ({ ...prev, gross_salary: formatCurrencyTR(e.target.value) }))
                                                 }
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                                className="w-full border rounded px-3 py-2 text-sm"
                                                 required
                                             />
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-slate-600">Bonus / Prim</label>
+                                            <label className="text-slate-600">Net Ücret</label>
                                             <input
                                                 type="text"
-                                                step="0.01"
-                                                name="bonus"
-                                                value={form.bonus}
+                                                name="net_salary"
+                                                value={form.net_salary}
                                                 onChange={handleChange}
                                                 onBlur={(e) =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        bonus: formatCurrencyTR(e.target.value),
-                                                    }))
+                                                    setForm((prev) => ({ ...prev, net_salary: formatCurrencyTR(e.target.value) }))
                                                 }
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                                placeholder="Opsiyonel"
+                                                className="w-full border rounded px-3 py-2 text-sm"
+                                                required
                                             />
                                         </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                                         <div className="space-y-1">
+                                            <label className="text-slate-600">Bonus / Prim</label>
+                                            <input
+                                                type="text"
+                                                name="bonus"
+                                                value={form.bonus}
+                                                onChange={handleChange}
+                                                onBlur={(e) =>
+                                                    setForm((prev) => ({ ...prev, bonus: formatCurrencyTR(e.target.value) }))
+                                                }
+                                                className="w-full border rounded px-3 py-2 text-sm"
+                                                placeholder="Opsiyonel"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
                                             <label className="text-slate-600">Toplam Kesinti</label>
                                             <input
                                                 type="text"
-                                                step="0.01"
                                                 name="deductions_total"
                                                 value={form.deductions_total}
                                                 onChange={handleChange}
                                                 onBlur={(e) =>
-                                                    setForm((prev) => ({
-                                                        ...prev,
-                                                        deductions_total: formatCurrencyTR(e.target.value),
-                                                    }))
+                                                    setForm((prev) => ({ ...prev, deductions_total: formatCurrencyTR(e.target.value) }))
                                                 }
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                                className="w-full border rounded px-3 py-2 text-sm"
                                                 placeholder="Opsiyonel"
                                             />
                                         </div>
@@ -897,59 +1187,83 @@ export default function PayrollsPage() {
                                                 name="employer_sign_name"
                                                 value={form.employer_sign_name}
                                                 onChange={handleChange}
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
+                                                className="w-full border rounded px-3 py-2 text-sm"
                                                 placeholder="Örn: Ayşe Demir"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-1 text-sm">
-                                            <label className="text-slate-600">İmzalayan Ünvan</label>
-                                            <input
-                                                name="employer_sign_title"
-                                                value={form.employer_sign_title}
-                                                onChange={handleChange}
-                                                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring focus:ring-slate-200"
-                                                placeholder="Örn: İK Müdürü"
                                             />
                                         </div>
                                     </div>
 
-                                    <button
-                                        type="submit"
-                                        className="w-full bg-slate-900 text-white rounded py-2 text-sm hover:bg-slate-800"
-                                    >
-                                        Kaydet
-                                    </button>
-                                </form>
+                                    <div className="space-y-1 text-sm">
+                                        <label className="text-slate-600">İmzalayan Ünvan</label>
+                                        <input
+                                            name="employer_sign_title"
+                                            value={form.employer_sign_title}
+                                            onChange={handleChange}
+                                            className="w-full border rounded px-3 py-2 text-sm"
+                                            placeholder="Örn: İK Müdürü"
+                                        />
+                                    </div>
 
+                                    <div className="flex justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setCreateModalOpen(false)}
+                                            className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+                                        >
+                                            Vazgeç
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+                                        >
+                                            Kaydet
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
-                            {/* Sağ: JSON Dropzone */}
-                            <div className="w-full md:w-[100%] lg:w-[33%]">
+                        </div>
+                    ) : null}
+
+                    {showJsonImportModal ? (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                            <div
+                                className="absolute inset-0 bg-slate-900/50"
+                                onClick={() => {
+                                    if (!bulkLoading) setShowJsonImportModal(false);
+                                }}
+                            />
+                            <div className="relative w-full max-w-2xl ta-card p-5">
+                                <div className="mb-4 flex items-center justify-between">
+                                    <h2 className="text-lg font-semibold">Toplu JSON Import</h2>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (!bulkLoading) setShowJsonImportModal(false);
+                                        }}
+                                        className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
                                 <div
                                     onDragOver={handleDropzoneDragOver}
                                     onDragLeave={handleDropzoneDragLeave}
                                     onDrop={handleDropzoneDrop}
-                                    className={
-                                        "border-2 border-dashed rounded-lg p-4 text-xs md:text-sm " +
-                                        "flex flex-col items-center justify-center gap-2 " +
-                                        (dragActive
-                                            ? "border-slate-600 bg-slate-100"
-                                            : "border-slate-300 bg-slate-50")
-                                    }
+                                    className={[
+                                        "rounded-xl border-2 border-dashed p-6 text-center",
+                                        dragActive ? "border-slate-600 bg-slate-100" : "border-slate-300 bg-slate-50",
+                                    ].join(" ")}
                                 >
-                                    <p className="font-medium text-slate-700 text-center">
-                                        JSON ile toplu payroll yükle
+                                    <p className="text-sm font-medium text-slate-700">
+                                        JSON dosyanızı sürükleyip bırakın
                                     </p>
-                                    <p className="text-[11px] text-slate-500 text-center">
-                                        Tek bir bordro veya 1000+ bordro içeren .json dosyanızı buraya
-                                        sürükleyip bırakın veya dosya seçin.
-                                    </p>
-                                    <p className="text-[11px] text-slate-400 text-center">
-                                        Format: &#123;...&#125; veya [&#123;...&#125;, &#123;...&#125;]
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Tek bir kayıt veya toplu kayıt içeren `.json` dosyası yükleyebilirsiniz.
                                     </p>
 
-                                    <div className="mt-2 flex flex-wrap gap-2 justify-center">
-                                        <label className="inline-flex items-center gap-2 px-3 py-1 rounded border border-slate-300 text-xs font-medium cursor-pointer hover:bg-slate-100">
+                                    <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100">
                                             Dosya Seç
                                             <input
                                                 type="file"
@@ -959,297 +1273,25 @@ export default function PayrollsPage() {
                                                 disabled={bulkLoading}
                                             />
                                         </label>
-
                                         <button
                                             type="button"
                                             onClick={handleDownloadSampleJson}
-                                            className="inline-flex items-center px-3 py-1 rounded border border-slate-300 text-xs font-medium hover:bg-slate-100"
+                                            className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
                                         >
-                                            Örnek JSON indir
+                                            Örnek JSON İndir
                                         </button>
                                     </div>
-
-                                    {/* Örnek JSON göster */}
-                                    <details className="mt-2 w-full">
-                                        <summary className="cursor-pointer text-[11px] text-slate-500 hover:text-slate-700">
-                                            Örnek JSON formatını göster
-                                        </summary>
-                                        <pre className="mt-2 text-[11px] bg-slate-900 text-slate-100 rounded p-2 overflow-auto max-h-48">
-                                            {`[
-  {
-    "national_id": "11111111111",
-    "period_start": "2025-01-01",
-    "period_end": "2025-01-31",
-    "payment_date": "2025-02-10",
-    "currency": "TRY",
-    "gross_salary": 85000,
-    "net_salary": 65000,
-    "bonus": 5000,
-    "deductions_total": 2000,
-    "employer_sign_name": "Şirket Yetkilisi",
-    "employer_sign_title": "İK Müdürü",
-    "batch_id": "2025-01",
-    "external_batch_ref": "HR-SYSTEM-2025-01",
-    "external_ref": "PAYROLL-0001"
-  }
-]`}
-                                        </pre>
-                                    </details>
-
-                                    {/* Progress bar */}
-                                    {bulkProgress && (
-                                        <div className="w-full mt-3">
-                                            <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-emerald-500 transition-all"
-                                                    style={{
-                                                        width: `${(bulkProgress.processed /
-                                                            bulkProgress.total) *
-                                                            100
-                                                            }%`,
-                                                    }}
-                                                />
-                                            </div>
-                                            <p className="mt-1 text-[11px] text-slate-500 text-center">
-                                                {bulkProgress.processed} / {bulkProgress.total} kayıt
-                                                işlendi
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {bulkLoading && (
-                                        <p className="mt-2 text-[11px] text-slate-500">
-                                            JSON import devam ediyor, lütfen sayfadan ayrılmayın...
-                                        </p>
-                                    )}
-
-                                    {bulkError && (
-                                        <p className="mt-2 text-[11px] text-red-600 text-center">
-                                            {bulkError}
-                                        </p>
-                                    )}
-
-                                    {bulkStats && !bulkLoading && (
-                                        <p className="mt-2 text-[11px] text-emerald-600 text-center">
-                                            Toplam {bulkStats.total} kaydın{" "}
-                                            {bulkStats.imported} tanesi başarıyla eklendi,
-                                            {bulkStats.failed > 0 && (
-                                                <> {bulkStats.failed} tanesi hatalı.</>
-                                            )}
-                                        </p>
-                                    )}
-
-                                    {/* Hatalı kayıt detayları */}
-                                    {bulkFailedItems.length > 0 && (
-                                        <div className="mt-3 w-full">
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowFailedDetails((v) => !v)}
-                                                className="text-[11px] text-red-600 underline underline-offset-2"
-                                            >
-                                                {showFailedDetails
-                                                    ? "Hatalı kayıt listesini gizle"
-                                                    : `Hatalı kayıtları göster (${bulkFailedItems.length})`}
-                                            </button>
-
-                                            {showFailedDetails && (
-                                                <div className="mt-2 max-h-48 overflow-auto border border-red-200 rounded p-2 bg-red-50">
-                                                    {bulkFailedItems.map((item) => (
-                                                        <div
-                                                            key={item.index}
-                                                            className="mb-2 border-b border-red-100 pb-2 last:border-b-0 last:pb-0"
-                                                        >
-                                                            <p className="text-[11px] font-semibold text-red-700">
-                                                                Kayıt #{item.index + 1}
-                                                            </p>
-                                                            {item.data && (
-                                                                <p className="text-[11px] text-slate-700">
-                                                                    {item.data.period_start} -{" "}
-                                                                    {item.data.period_end} | Brüt:{" "}
-                                                                    {item.data.gross_salary} | Net:{" "}
-                                                                    {item.data.net_salary}
-                                                                </p>
-                                                            )}
-                                                            {item.errors?.length > 0 && (
-                                                                <ul className="mt-1 text-[11px] text-red-700 list-disc list-inside">
-                                                                    {item.errors.map((err, i) => (
-                                                                        <li key={i}>{err}</li>
-                                                                    ))}
-                                                                </ul>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
+
+                                {bulkProgress ? (
+                                    <div className="mt-4 text-xs text-slate-600">
+                                        Toplu JSON: {bulkProgress.processed}/{bulkProgress.total}
+                                    </div>
+                                ) : null}
+                                {bulkError ? <div className="mt-2 text-xs text-red-600">{bulkError}</div> : null}
                             </div>
                         </div>
-                    </div>
-
-                    {/* ----- LIST ----- */}
-                    <div className="bg-white p-4 rounded shadow border">
-                        <h2 className="font-semibold text-lg mb-4">Payroll Listesi</h2>
-
-                        {loading ? (
-                            <div className="text-slate-500 text-sm">Yükleniyor...</div>
-                        ) : payrolls.length === 0 ? (
-                            <div className="text-slate-500 text-sm">Henüz payroll yok.</div>
-                        ) : (
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b">
-                                        <th className="p-2 text-left">ID</th>
-                                        <th className="p-2 text-left">NFT</th>
-                                        <th className="p-2 text-left">Dönem</th>
-                                        <th className="p-2 text-left">Tutar</th>
-                                        <th className="p-2 text-left">Status</th>
-                                        <th className="p-2 text-left">Aksiyonlar</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                    {payrolls.map((p) => (
-                                        <tr key={p.id} className="border-b">
-                                            <td className="p-2">{p.id}</td>
-
-                                            <td className="p-2">
-                                                {!p.nft ? (
-                                                    <span className="text-xs text-slate-400">Mint edilmedi</span>
-                                                ) : (
-                                                    <div className="border rounded-md p-2 bg-slate-50 shadow-sm space-y-2 w-44">
-
-                                                        {/* NFT Görseli */}
-                                                        {p.nft.token_id ? (
-                                                            <img
-                                                                src={p.nft.image_url || "/placeholder-nft.png"}
-                                                                alt="NFT"
-                                                                className="w-full h-24 object-cover rounded"
-                                                            />
-                                                        ) : (
-                                                            <div className="w-full h-24 bg-slate-200 rounded animate-pulse" />
-                                                        )}
-
-                                                        <div className="text-xs space-y-1">
-
-                                                            {/* Status */}
-                                                            <div className="flex items-center gap-2">
-                                                                {badge(p.nft.status)}
-                                                            </div>
-
-                                                            {/* Token ID */}
-                                                            {p.nft.token_id && (
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="text-slate-600">Token ID:</span>
-                                                                    <span className="font-medium">{p.nft.token_id}</span>
-                                                                </div>
-                                                            )}
-
-                                                            {/* IPFS Link */}
-                                                            {p.nft.ipfs_cid && (
-                                                                <a
-                                                                    href={`https://ipfs.io/ipfs/${p.nft.ipfs_cid}`}
-                                                                    target="_blank"
-                                                                    className="text-blue-600 underline block"
-                                                                >
-                                                                    Metadata
-                                                                </a>
-                                                            )}
-
-                                                            {/* Etherscan */}
-                                                            {p.nft.tx_hash && (
-                                                                <a
-                                                                    href={`https://sepolia.etherscan.io/tx/${p.nft.tx_hash}`}
-                                                                    target="_blank"
-                                                                    className="text-green-600 underline block"
-                                                                >
-                                                                    Etherscan
-                                                                </a>
-                                                            )}
-
-                                                            {/* Copy Token ID */}
-                                                            {p.nft.token_id && (
-                                                                <button
-                                                                    onClick={() => navigator.clipboard.writeText(p.nft.token_id.toString())}
-                                                                    className="text-slate-500 underline text-xs hover:text-slate-700"
-                                                                >
-                                                                    Kopyala
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </td>
-
-                                            <td className="p-2">
-                                                {p.period_start} → {p.period_end}
-                                            </td>
-                                            <td className="p-2">{p.net_salary}</td>
-                                            <td className="p-2">{badge(p.status)}</td>
-
-
-
-                                            <td className="p-2 space-x-2">
-                                                {/* DETAY */}
-                                                <button
-                                                    onClick={() =>
-                                                        router.push(
-                                                            `/companies/${companyId}/employees/${employeeId}/payrolls/${p.id}`
-                                                        )
-                                                    }
-                                                    className="text-xs px-2 py-1 bg-slate-900 text-white rounded hover:bg-slate-800"
-                                                >
-                                                    Detay
-                                                </button>
-                                                {/* QUEUE */}
-                                                <button
-                                                    onClick={() => handleQueueMint(p.id)}
-                                                    className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                                                >
-                                                    Queue
-                                                </button>
-
-                                                {/* STATUS */}
-                                                <button
-                                                    onClick={() => handleStatus(p.id)}
-                                                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-                                                >
-                                                    Status
-                                                </button>
-
-                                                {/* RETRY */}
-                                                <button
-                                                    onClick={() => handleRetry(p.id)}
-                                                    className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
-                                                >
-                                                    Retry Mint
-                                                </button>
-
-                                                <button
-                                                    onClick={() => handleDecrypt(p.id)}
-                                                    className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
-                                                >
-                                                    Decrypt
-                                                </button>
-
-                                                {/* <button
-                                                    onClick={() =>
-                                                        router.push(
-                                                            `/companies/${companyId}/employees/${e.id}/nfts/${p.id}`
-                                                        )
-                                                    }
-                                                    className="text-xs px-2 py-1 bg-cyan-100 text-cyan-700 rounded hover:bg-cyan-200"
-                                                >
-                                                    NFT
-                                                </button> */}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
+                    ) : null}
                 </main>
             </div>
 
@@ -1287,14 +1329,14 @@ export default function PayrollsPage() {
                                 {"period_start" in decryptModal.payload && (
                                     <div>
                                         <span className="font-medium">Period Start: </span>
-                                        {decryptModal.payload.period_start}
+                                        {formatDateDDMMYYYY(decryptModal.payload.period_start)}
                                     </div>
                                 )}
 
                                 {"period_end" in decryptModal.payload && (
                                     <div>
                                         <span className="font-medium">Period End: </span>
-                                        {decryptModal.payload.period_end}
+                                        {formatDateDDMMYYYY(decryptModal.payload.period_end)}
                                     </div>
                                 )}
 

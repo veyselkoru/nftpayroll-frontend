@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { Copy, ExternalLink, Search, RotateCcw } from "lucide-react";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
+import Select2 from "@/app/components/Select2";
 import { useAuthGuard } from "@/app/components/layout/useAuthGuard";
 import { fetchCompanyNfts } from "@/lib/companies";
+import { formatDateTimeDDMMYYYY } from "@/lib/date";
 
 export default function CompanyNftsPage() {
     const ready = useAuthGuard();
@@ -17,6 +20,8 @@ export default function CompanyNftsPage() {
     const [error, setError] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
     const [search, setSearch] = useState("");
+    const [sortBy, setSortBy] = useState("newest");
+    const [copied, setCopied] = useState("");
 
 
     useEffect(() => {
@@ -43,6 +48,35 @@ export default function CompanyNftsPage() {
         load();
     }, [ready, companyId]);
 
+    useEffect(() => {
+        if (!copied) return;
+        const id = setTimeout(() => setCopied(""), 1500);
+        return () => clearTimeout(id);
+    }, [copied]);
+
+    const statusCounts = useMemo(() => {
+        return nfts.reduce(
+            (acc, nft) => {
+                const status = nft.status || "unknown";
+                acc.total += 1;
+                if (status in acc) {
+                    acc[status] += 1;
+                } else {
+                    acc.unknown += 1;
+                }
+                return acc;
+            },
+            {
+                total: 0,
+                pending: 0,
+                sending: 0,
+                sent: 0,
+                failed: 0,
+                unknown: 0,
+            }
+        );
+    }, [nfts]);
+
     const statusBadge = (status) => {
         const colors = {
             pending: "bg-yellow-100 text-yellow-700",
@@ -61,43 +95,99 @@ export default function CompanyNftsPage() {
         );
     };
 
-    const filteredNfts = nfts.filter((nft) => {
-        // Status filtresi
-        if (statusFilter !== "all" && nft.status !== statusFilter) {
-            return false;
-        }
-
-        // Arama filtresi (employee adı + tx hash + token_id)
-        if (search.trim()) {
-            const q = search.toLowerCase();
-            const employee = (nft.employee || "").toLowerCase();
-            const tx = (nft.tx_hash || "").toLowerCase();
-            const tokenId = (nft.token_id ? String(nft.token_id) : "").toLowerCase();
-
-            if (
-                !employee.includes(q) &&
-                !tx.includes(q) &&
-                !tokenId.includes(q)
-            ) {
+    const filteredNfts = useMemo(() => {
+        const list = nfts.filter((nft) => {
+            if (statusFilter !== "all" && nft.status !== statusFilter) {
                 return false;
             }
-        }
 
-        return true;
-    });
+            if (search.trim()) {
+                const q = search.toLowerCase();
+                const employee = (nft.employee || "").toLowerCase();
+                const tx = (nft.tx_hash || "").toLowerCase();
+                const tokenId = (nft.token_id ? String(nft.token_id) : "").toLowerCase();
+                const id = String(nft.id || "");
+
+                if (
+                    !employee.includes(q) &&
+                    !tx.includes(q) &&
+                    !tokenId.includes(q) &&
+                    !id.includes(q)
+                ) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        list.sort((a, b) => {
+            const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+
+            if (sortBy === "oldest") return aTime - bTime;
+            if (sortBy === "token-asc") return Number(a.token_id || 0) - Number(b.token_id || 0);
+            if (sortBy === "token-desc") return Number(b.token_id || 0) - Number(a.token_id || 0);
+            if (sortBy === "status") return String(a.status || "").localeCompare(String(b.status || ""), "tr");
+            return bTime - aTime;
+        });
+
+        return list;
+    }, [nfts, search, sortBy, statusFilter]);
+
+    useEffect(() => {
+        if (filteredNfts.length === 0) {
+            setSelected(null);
+            return;
+        }
+        if (!selected) {
+            setSelected(filteredNfts[0]);
+            return;
+        }
+        const stillExists = filteredNfts.some((item) => item.id === selected.id);
+        if (!stillExists) {
+            setSelected(filteredNfts[0]);
+        }
+    }, [filteredNfts, selected]);
+
+    const statusFilterOptions = [
+        { key: "all", label: `Hepsi (${statusCounts.total})` },
+        { key: "pending", label: `Pending (${statusCounts.pending})` },
+        { key: "sending", label: `Sending (${statusCounts.sending})` },
+        { key: "sent", label: `Sent (${statusCounts.sent})` },
+        { key: "failed", label: `Failed (${statusCounts.failed})` },
+    ];
+
+    const sortOptions = [
+        { value: "newest", label: "En yeni" },
+        { value: "oldest", label: "En eski" },
+        { value: "token-asc", label: "Token ID (artan)" },
+        { value: "token-desc", label: "Token ID (azalan)" },
+        { value: "status", label: "Duruma göre" },
+    ];
+
+    const copyText = async (value, key) => {
+        if (!value) return;
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopied(key);
+        } catch {
+            setCopied("");
+        }
+    };
 
 
     return (
-        <div className="min-h-screen flex bg-slate-100">
+        <div className="min-h-screen flex ta-shell">
             <Sidebar />
 
             <div className="flex flex-col flex-1 min-w-0">
                 <Navbar />
 
-                <main className="flex-1 p-4 md:p-6 space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h1 className="text-xl font-semibold">
-                            Şirket NFT&apos;leri
+                <main className="ta-page space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h1 className="text-xl md:text-2xl font-semibold">
+                            Firma NFT&apos;leri
                         </h1>
                         <div className="text-xs text-slate-500">
                             Company ID: {companyId}
@@ -110,16 +200,33 @@ export default function CompanyNftsPage() {
                         </div>
                     )}
 
+                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                        <div className="ta-card p-3">
+                            <div className="text-xs text-slate-500">Toplam NFT</div>
+                            <div className="text-lg font-semibold mt-1">{statusCounts.total}</div>
+                        </div>
+                        <div className="ta-card p-3">
+                            <div className="text-xs text-slate-500">Pending</div>
+                            <div className="text-lg font-semibold mt-1 text-yellow-700">{statusCounts.pending}</div>
+                        </div>
+                        <div className="ta-card p-3">
+                            <div className="text-xs text-slate-500">Sending</div>
+                            <div className="text-lg font-semibold mt-1 text-blue-700">{statusCounts.sending}</div>
+                        </div>
+                        <div className="ta-card p-3">
+                            <div className="text-xs text-slate-500">Sent</div>
+                            <div className="text-lg font-semibold mt-1 text-green-700">{statusCounts.sent}</div>
+                        </div>
+                        <div className="ta-card p-3">
+                            <div className="text-xs text-slate-500">Failed</div>
+                            <div className="text-lg font-semibold mt-1 text-red-700">{statusCounts.failed}</div>
+                        </div>
+                    </div>
+
                     {/* Filter bar */}
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-2">
+                    <div className="ta-card p-3 space-y-3">
                         <div className="flex flex-wrap gap-2 text-xs">
-                            {[
-                                { key: "all", label: "Hepsi" },
-                                { key: "pending", label: "Pending" },
-                                { key: "sending", label: "Sending" },
-                                { key: "sent", label: "Sent" },
-                                { key: "failed", label: "Failed" },
-                            ].map((opt) => (
+                            {statusFilterOptions.map((opt) => (
                                 <button
                                     key={opt.key}
                                     onClick={() => setStatusFilter(opt.key)}
@@ -135,14 +242,40 @@ export default function CompanyNftsPage() {
                             ))}
                         </div>
 
-                        <div className="w-full md:w-64">
-                            <input
-                                type="text"
-                                placeholder="Employee / tx / token ara..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="w-full px-3 py-2 text-xs border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/30"
-                            />
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                            <div className="md:col-span-6 relative">
+                                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Employee / tx / token / ID ara..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                                />
+                            </div>
+                            <div className="md:col-span-3">
+                                <Select2
+                                    name="sortBy"
+                                    value={sortBy}
+                                    onChange={(e) => setSortBy(e.target.value)}
+                                    options={sortOptions}
+                                    isSearchable={false}
+                                />
+                            </div>
+                            <div className="md:col-span-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setStatusFilter("all");
+                                        setSearch("");
+                                        setSortBy("newest");
+                                    }}
+                                    className="w-full h-[38px] inline-flex items-center justify-center gap-2 text-sm rounded-lg border border-slate-300 hover:bg-slate-50 transition"
+                                >
+                                    <RotateCcw className="w-4 h-4" />
+                                    Filtreleri Sıfırla
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -156,8 +289,8 @@ export default function CompanyNftsPage() {
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             {/* Sol taraf: liste */}
-                            <div className="md:col-span-1 bg-white rounded-xl border p-3 space-y-2 max-h-[70vh] overflow-auto">
-                                <div className="text-xs font-medium text-slate-500 mb-1">
+                            <div className="md:col-span-1 ta-card p-3 space-y-2 max-h-[72vh] overflow-auto">
+                                <div className="sticky top-0 bg-white z-10 text-xs font-medium text-slate-500 pb-2">
                                     NFT Listesi ({filteredNfts.length})
                                 </div>
 
@@ -181,24 +314,34 @@ export default function CompanyNftsPage() {
                                                 {statusBadge(nft.status)}
                                             </div>
                                             <div className="text-xs text-slate-500 mt-1">
-                                                {nft.employee
-                                                    ? nft.employee
-                                                    : "Çalışan bilgisi yok"}
+                                                    {nft.employee
+                                                        ? nft.employee
+                                                        : "Çalışan bilgisi yok"}
                                             </div>
-                                            {nft.created_at && (
-                                                <div className="text-[11px] text-slate-400 mt-0.5">
-                                                    {new Date(
-                                                        nft.created_at
-                                                    ).toLocaleString()}
+                                            <div className="flex items-center justify-between mt-0.5">
+                                                {nft.created_at && (
+                                                    <div className="text-[11px] text-slate-400">
+                                                        {formatDateTimeDDMMYYYY(nft.created_at)}
+                                                    </div>
+                                                )}
+                                                {nft.tx_hash ? (
+                                                    <div className="text-[11px] text-slate-400 font-mono">
+                                                        {nft.tx_hash.slice(0, 10)}...
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            {nft.created_at && selected?.id === nft.id ? (
+                                                <div className="text-[11px] text-slate-400 mt-1">
+                                                    {formatDateTimeDDMMYYYY(nft.created_at)}
                                                 </div>
-                                            )}
+                                            ) : null}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
                             {/* Sağ taraf: detay */}
-                            <div className="md:col-span-2 bg-white rounded-xl border p-4 min-h-[260px]">
+                            <div className="md:col-span-2 ta-card p-4 min-h-[260px]">
                                 {selected ? (
                                     <div className="space-y-3 text-sm">
                                         <div className="flex items-center justify-between">
@@ -212,7 +355,9 @@ export default function CompanyNftsPage() {
                                                         `(Token ${selected.token_id})`}
                                                 </div>
                                             </div>
-                                            <div>{statusBadge(selected.status)}</div>
+                                            <div className="flex items-center gap-2">
+                                                {statusBadge(selected.status)}
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
@@ -231,8 +376,20 @@ export default function CompanyNftsPage() {
                                                     Tx Hash
                                                 </div>
                                                 {selected.tx_hash ? (
-                                                    <div className="text-xs break-all">
-                                                        {selected.tx_hash}
+                                                    <div className="space-y-1">
+                                                        <div className="text-xs break-all font-mono">
+                                                            {selected.tx_hash}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                copyText(selected.tx_hash, "tx")
+                                                            }
+                                                            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                                                        >
+                                                            <Copy className="w-3.5 h-3.5" />
+                                                            {copied === "tx" ? "Kopyalandı" : "Kopyala"}
+                                                        </button>
                                                     </div>
                                                 ) : (
                                                     <div className="text-xs text-slate-400">
@@ -250,8 +407,9 @@ export default function CompanyNftsPage() {
                                                         href={selected.ipfs_url}
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="text-xs text-blue-600 hover:underline break-all"
+                                                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline break-all"
                                                     >
+                                                        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
                                                         {selected.ipfs_url}
                                                     </a>
                                                 ) : (
@@ -272,8 +430,9 @@ export default function CompanyNftsPage() {
                                                         }
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="text-xs text-blue-600 hover:underline break-all"
+                                                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline break-all"
                                                     >
+                                                        <ExternalLink className="w-3.5 h-3.5" />
                                                         Etherscan&apos;de görüntüle
                                                     </a>
                                                 ) : (
@@ -287,11 +446,18 @@ export default function CompanyNftsPage() {
                                         {selected.created_at && (
                                             <div className="pt-2 border-t border-slate-100 text-xs text-slate-500">
                                                 Oluşturulma:{" "}
-                                                {new Date(
-                                                    selected.created_at
-                                                ).toLocaleString()}
+                                                {formatDateTimeDDMMYYYY(selected.created_at)}
                                             </div>
                                         )}
+
+                                        <details className="pt-1">
+                                            <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
+                                                Ham JSON verisini göster
+                                            </summary>
+                                            <pre className="mt-2 text-[11px] bg-slate-50 border border-slate-200 rounded p-2 overflow-x-auto">
+                                                {JSON.stringify(selected, null, 2)}
+                                            </pre>
+                                        </details>
                                     </div>
                                 ) : (
                                     <div className="text-sm text-slate-500">
