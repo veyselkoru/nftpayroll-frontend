@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Sidebar from "@/app/components/layout/Sidebar";
 import Navbar from "@/app/components/layout/Navbar";
@@ -58,7 +58,7 @@ function resolveInitialType(view) {
   return "payroll";
 }
 
-export default function ReportsPage() {
+function ReportsPageContent() {
   const ready = useAuthGuard();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -696,5 +696,19 @@ export default function ReportsPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function ReportsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+          Yükleniyor...
+        </div>
+      }
+    >
+      <ReportsPageContent />
+    </Suspense>
   );
 }
